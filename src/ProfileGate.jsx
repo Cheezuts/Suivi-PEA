@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { LogIn, UserPlus, Lock, ShieldCheck } from "lucide-react";
-import { listProfiles, createProfile, unlockProfile } from "./profiles.js";
+import { LogIn, UserPlus, Lock, ShieldCheck, Trash2 } from "lucide-react";
+import { listProfiles, createProfile, unlockProfile, deleteProfile } from "./profiles.js";
 
 const seedData = {
   transactions: [],
@@ -98,10 +98,32 @@ export default function ProfileGate({ onEnter }) {
             ) : !selected ? (
               <div className="gate-list">
                 {profiles.map((p) => (
-                  <button key={p.name} className="gate-profile" onClick={() => setSelected(p)}>
-                    <span>{p.name}</span>
-                    {p.hasPin && <Lock size={13} />}
-                  </button>
+                  <div key={p.name} className="gate-profile">
+                    <button
+                      className="gate-profile-main"
+                      onClick={() => setSelected(p)}
+                    >
+                      <span>{p.name}</span>
+                      {p.hasPin && <Lock size={13} />}
+                    </button>
+                    <button
+                      className="gate-profile-delete"
+                      title="Supprimer ce profil"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Supprimer définitivement le profil "${p.name}" et toutes ses données ? Cette action est irréversible.`
+                          )
+                        ) {
+                          deleteProfile(p.name);
+                          setProfiles(listProfiles());
+                          if (selected?.name === p.name) setSelected(null);
+                        }
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : (

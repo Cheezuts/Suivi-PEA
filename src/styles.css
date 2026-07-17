@@ -171,19 +171,43 @@ input {
 }
 .gate-profile {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 11px 14px;
+  align-items: stretch;
+  gap: 0;
   border-radius: 8px;
   border: 1px solid #E3E1D8;
   background: #FFFFFF;
+  overflow: hidden;
+}
+.gate-profile:hover {
+  border-color: #B8873A;
+}
+.gate-profile-main {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 14px;
+  border: none;
+  background: transparent;
   font-weight: 600;
   font-size: 14px;
   color: #1C2530;
   cursor: pointer;
+  text-align: left;
 }
-.gate-profile:hover {
-  border-color: #B8873A;
+.gate-profile-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  border: none;
+  border-left: 1px solid #E3E1D8;
+  background: #FCFCFA;
+  color: #B5484D;
+  cursor: pointer;
+}
+.gate-profile-delete:hover {
+  background: #FBEAEA;
 }
 .gate-empty {
   color: #6B7280;
