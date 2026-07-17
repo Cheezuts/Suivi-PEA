@@ -6,6 +6,7 @@ const seedData = {
   transactions: [],
   versements: [],
   valorisations: [],
+  allocationTargets: [],
 };
 
 export default function ProfileGate({ onEnter }) {

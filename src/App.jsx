@@ -3,7 +3,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { Plus, Trash2, TrendingUp, PieChart as PieIcon, ListOrdered, Layers, Download, Upload, FileText, LogOut } from "lucide-react";
+import { Plus, Trash2, TrendingUp, PieChart as PieIcon, ListOrdered, Layers, Download, Upload, FileText, LogOut, Calculator } from "lucide-react";
 import ProfileGate from "./ProfileGate.jsx";
 import { saveProfileData } from "./profiles.js";
 import { exportJSON, exportPDF, importJSONFile } from "./export.js";
@@ -150,6 +150,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const [selectedEtf, setSelectedEtf] = useState(null);
   const [saving, setSaving] = useState(false);
   const [importError, setImportError] = useState("");
+  const [amountToInvest, setAmountToInvest] = useState("");
 
   const persist = useCallback(
     async (next) => {
@@ -292,9 +293,73 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     }
   };
 
+  // ---------- Calculateur de répartition ----------
+  const targets = data.allocationTargets || [];
+  const persistTargets = (nextTargets) => persist({ ...data, allocationTargets: nextTargets });
+
+  const addTarget = () => {
+    persistTargets([...targets, { id: uid(), etf: "", isin: "", targetPct: "", price: "" }]);
+  };
+  const updateTarget = (id, field, value) => {
+    persistTargets(targets.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  };
+  const deleteTarget = (id) => {
+    persistTargets(targets.filter((t) => t.id !== id));
+  };
+  const importFromPortfolio = () => {
+    const existingNames = new Set(targets.map((t) => t.etf));
+    const toAdd = etfList
+      .filter((e) => !existingNames.has(e))
+      .map((e) => ({ id: uid(), etf: e, isin: isinByEtf[e] || "", targetPct: "", price: "" }));
+    if (toAdd.length) persistTargets([...targets, ...toAdd]);
+  };
+  const totalTargetPct = targets.reduce((s, t) => s + (Number(t.targetPct) || 0), 0);
+
+  const allocationResult = useMemo(() => {
+    const amt = Number(amountToInvest) || 0;
+    let working = targets.map((t) => {
+      const pct = Number(t.targetPct) || 0;
+      const price = Number(t.price) || 0;
+      const idealAmount = amt * (pct / 100);
+      const qty = price > 0 ? Math.floor(idealAmount / price) : 0;
+      return { ...t, pct, price, idealAmount, qty, spent: qty * price };
+    });
+    let leftover = amt - working.reduce((s, r) => s + r.spent, 0);
+    let safety = 0;
+    while (safety < 1000) {
+      safety++;
+      let best = null;
+      for (const r of working) {
+        if (r.price > 0 && r.price <= leftover + 1e-9) {
+          const gap = r.idealAmount - r.spent;
+          if (!best || gap > best.gap) best = { row: r, gap };
+        }
+      }
+      if (!best) break;
+      best.row.qty += 1;
+      best.row.spent += best.row.price;
+      leftover -= best.row.price;
+    }
+    return { rows: working, leftover, totalSpent: amt - leftover };
+  }, [targets, amountToInvest]);
+
+  const applyAllocationToOperations = () => {
+    const newTx = allocationResult.rows
+      .filter((r) => r.qty > 0)
+      .map((r) => ({ id: uid(), date: todayISO(), etf: r.etf, isin: r.isin, quantity: r.qty, cost: r.price }));
+    const newVersement = { id: uid(), date: todayISO(), amount: Number(amountToInvest) || 0 };
+    persist({
+      ...data,
+      transactions: [...data.transactions, ...newTx],
+      versements: [...data.versements, newVersement],
+    });
+    setAmountToInvest("");
+  };
+
   const TABS = [
     { id: "operations", label: "Opérations", icon: ListOrdered },
     { id: "parEtf", label: "Par ETF", icon: Layers },
+    { id: "calculateur", label: "Calculateur", icon: Calculator },
     { id: "valorisation", label: "Valorisation", icon: TrendingUp },
     { id: "repartition", label: "Répartition", icon: PieIcon },
   ];
@@ -602,6 +667,192 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
           </SectionCard>
         )}
 
+        {tab === "calculateur" && (
+          <>
+            <SectionCard>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600 }}>Répartition cible</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={importFromPortfolio} style={addBtnStyleOutline}>
+                    Importer mes ETF
+                  </button>
+                  <button onClick={addTarget} style={addBtnStyle}>
+                    <Plus size={14} /> ETF
+                  </button>
+                </div>
+              </div>
+              <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 10 }}>
+                Renseigne le pourcentage cible et le prix unitaire actuel de chaque ETF (le tien ou un nouveau que tu veux ajouter). Le total doit faire 100%.
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>ETF</th>
+                      <th style={th}>ISIN</th>
+                      <th style={{ ...th, textAlign: "right" }}>Allocation cible (%)</th>
+                      <th style={{ ...th, textAlign: "right" }}>Prix unitaire</th>
+                      <th style={th}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {targets.map((t) => (
+                      <tr key={t.id}>
+                        <td style={td}>
+                          <input
+                            list="etf-names"
+                            value={t.etf}
+                            onChange={(e) => updateTarget(t.id, "etf", e.target.value)}
+                            style={{ ...inputStyle, fontFamily: "Inter" }}
+                            placeholder="Nom de l'ETF"
+                          />
+                        </td>
+                        <td style={td}>
+                          <input
+                            value={t.isin || ""}
+                            onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())}
+                            style={{ ...inputStyle, letterSpacing: 0.5 }}
+                            placeholder="FR00..."
+                            maxLength={12}
+                          />
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={t.targetPct}
+                            onChange={(e) => updateTarget(t.id, "targetPct", e.target.value)}
+                            style={{ ...inputStyle, textAlign: "right" }}
+                          />
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={t.price}
+                            onChange={(e) => updateTarget(t.id, "price", e.target.value)}
+                            style={{ ...inputStyle, textAlign: "right" }}
+                          />
+                        </td>
+                        <td style={{ ...td, textAlign: "center" }}>
+                          <IconBtn danger onClick={() => deleteTarget(t.id)} title="Supprimer" />
+                        </td>
+                      </tr>
+                    ))}
+                    {targets.length === 0 && (
+                      <tr>
+                        <td colSpan={5} style={{ ...td, color: COLORS.muted, textAlign: "center", padding: 20 }}>
+                          Aucun ETF pour l'instant — importe ceux de ton portefeuille ou ajoute-en un.
+                        </td>
+                      </tr>
+                    )}
+                    {targets.length > 0 && (
+                      <tr>
+                        <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}`, fontWeight: 700 }}>Total</td>
+                        <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                        <td
+                          style={{
+                            ...td,
+                            borderBottom: "none",
+                            borderTop: `2px solid ${COLORS.navy}`,
+                            textAlign: "right",
+                            fontFamily: "IBM Plex Mono",
+                            fontWeight: 700,
+                            color: Math.abs(totalTargetPct - 100) < 0.01 ? COLORS.green : COLORS.red,
+                          }}
+                        >
+                          {totalTargetPct.toFixed(1)}%
+                        </td>
+                        <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                        <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+
+            <SectionCard>
+              <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 12 }}>
+                Montant à répartir
+              </div>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex. 500"
+                  value={amountToInvest}
+                  onChange={(e) => setAmountToInvest(e.target.value)}
+                  style={{ ...inputStyle, maxWidth: 180, fontSize: 16, padding: "9px 10px" }}
+                />
+                <span style={{ fontFamily: "IBM Plex Mono", color: COLORS.muted }}>€</span>
+              </div>
+
+              {Number(amountToInvest) > 0 && targets.length > 0 && (
+                <>
+                  <div style={{ overflowX: "auto", marginTop: 18 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr>
+                          <th style={th}>ETF</th>
+                          <th style={{ ...th, textAlign: "right" }}>Allocation</th>
+                          <th style={{ ...th, textAlign: "right" }}>Montant idéal</th>
+                          <th style={{ ...th, textAlign: "right" }}>Quantité à acheter</th>
+                          <th style={{ ...th, textAlign: "right" }}>Montant dépensé</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allocationResult.rows.map((r) => (
+                          <tr key={r.id}>
+                            <td style={{ ...td, fontWeight: 600 }}>{r.etf || <span style={{ color: COLORS.muted }}>—</span>}</td>
+                            <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", color: COLORS.muted }}>
+                              {r.pct.toFixed(1)}%
+                            </td>
+                            <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", color: COLORS.muted }}>
+                              {fmtMoney(r.idealAmount)}
+                            </td>
+                            <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 700, fontSize: 15 }}>
+                              {r.price > 0 ? r.qty : "—"}
+                            </td>
+                            <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 600, color: COLORS.gold }}>
+                              {fmtMoney(r.spent)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}`, fontWeight: 700 }}>
+                            Non investi (arrondis)
+                          </td>
+                          <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                          <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                          <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                          <td
+                            style={{
+                              ...td,
+                              borderBottom: "none",
+                              borderTop: `2px solid ${COLORS.navy}`,
+                              textAlign: "right",
+                              fontFamily: "IBM Plex Mono",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {fmtMoney(allocationResult.leftover)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={applyAllocationToOperations} style={addBtnStyle}>
+                      <Plus size={14} /> Enregistrer ces achats dans Opérations
+                    </button>
+                  </div>
+                </>
+              )}
+            </SectionCard>
+          </>
+        )}
+
         {tab === "valorisation" && (
           <>
             <SectionCard>
@@ -791,6 +1042,21 @@ const addBtnStyle = {
   background: COLORS.navy,
   color: "#fff",
   border: "none",
+  borderRadius: 6,
+  padding: "7px 12px",
+  fontFamily: "Inter",
+  fontWeight: 600,
+  fontSize: 12.5,
+  cursor: "pointer",
+};
+
+const addBtnStyleOutline = {
+  display: "flex",
+  alignItems: "center",
+  gap: 5,
+  background: "transparent",
+  color: COLORS.navy,
+  border: `1px solid ${COLORS.navy}`,
   borderRadius: 6,
   padding: "7px 12px",
   fontFamily: "Inter",
