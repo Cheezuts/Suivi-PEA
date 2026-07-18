@@ -50,6 +50,76 @@ input {
   background: rgba(255, 255, 255, 0.16);
 }
 
+/* ---------- Sélecteur de comptes ---------- */
+.pea-accounts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  align-items: center;
+}
+.pea-acc-chip {
+  display: flex;
+  align-items: stretch;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+}
+.pea-acc-chip.active {
+  background: #B8873A;
+  border-color: #B8873A;
+}
+.pea-acc-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pea-acc-del {
+  border: none;
+  border-left: 1px solid rgba(255,255,255,0.2);
+  background: transparent;
+  color: #fff;
+  opacity: 0.7;
+  padding: 0 7px;
+  cursor: pointer;
+}
+.pea-acc-del:hover {
+  opacity: 1;
+  background: rgba(0,0,0,0.15);
+}
+.pea-acc-add {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px dashed rgba(255,255,255,0.35);
+  background: transparent;
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pea-acc-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  align-items: center;
+}
+.pea-acc-form .gate-input {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 /* ---------- Tabs ---------- */
 .pea-tabs {
   display: flex;

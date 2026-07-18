@@ -2,12 +2,22 @@ import React, { useState } from "react";
 import { LogIn, UserPlus, Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { listProfiles, createProfile, unlockProfile, deleteProfile } from "./profiles.js";
 
-const seedData = {
-  transactions: [],
-  versements: [],
-  valorisations: [],
-  allocationTargets: [],
-};
+function makeDefaultAccount() {
+  const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return {
+    id,
+    name: "PEA",
+    kind: "PEA",
+    transactions: [],
+    versements: [],
+    valorisations: [],
+    allocationTargets: [],
+  };
+}
+function seedProfileData() {
+  const acc = makeDefaultAccount();
+  return { accounts: [acc], activeAccountId: acc.id };
+}
 
 export default function ProfileGate({ onEnter }) {
   const [profiles, setProfiles] = useState(listProfiles());
@@ -26,7 +36,7 @@ export default function ProfileGate({ onEnter }) {
     setBusy(true);
     try {
       const { key, data } = await unlockProfile(selected.name, pin);
-      onEnter({ name: selected.name, key, data: data || seedData });
+      onEnter({ name: selected.name, key, data: data || seedProfileData() });
     } catch (err) {
       setError(err.message || "Impossible d'ouvrir ce profil.");
     } finally {
@@ -51,8 +61,9 @@ export default function ProfileGate({ onEnter }) {
     }
     setBusy(true);
     try {
-      const { key } = await createProfile(newName.trim(), newPin || null, seedData);
-      onEnter({ name: newName.trim(), key, data: seedData });
+      const seed = seedProfileData();
+      const { key } = await createProfile(newName.trim(), newPin || null, seed);
+      onEnter({ name: newName.trim(), key, data: seed });
     } catch (err) {
       setError(err.message);
     } finally {
