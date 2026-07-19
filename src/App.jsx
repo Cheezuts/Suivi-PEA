@@ -42,6 +42,12 @@ const KIND_ACCENT = {
   Crypto: "#0ECB81",
   Autre: "#6B7280",
 };
+const KIND_HEADER_BG = {
+  PEA: "#10233B",
+  CTO: "#0F2E33",
+  Crypto: "#0A2B20",
+  Autre: "#262A30",
+};
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -73,6 +79,24 @@ function fmtPct(p) {
   if (p === null || p === undefined || !Number.isFinite(p)) return "—";
   return (p >= 0 ? "+" : "") + p.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " %";
 }
+function pieTooltip(total) {
+  return (value, name) => {
+    const pct = total ? ((value / total) * 100).toFixed(1) : "0.0";
+    return [`${fmtMoney(value)} (${pct} %)`, name];
+  };
+}
+const PIE_LABEL_RADIAN = Math.PI / 180;
+function renderPiePercentLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent }) {
+  if (percent < 0.04) return null; // évite d'encombrer les toutes petites parts
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.55;
+  const x = cx + radius * Math.cos(-midAngle * PIE_LABEL_RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * PIE_LABEL_RADIAN);
+  return (
+    <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" style={{ fontFamily: "IBM Plex Mono", fontSize: 11, fontWeight: 700, pointerEvents: "none" }}>
+      {(percent * 100).toFixed(0)}%
+    </text>
+  );
+}
 function monthKey(iso) {
   return iso ? iso.slice(0, 7) : "";
 }
@@ -92,6 +116,23 @@ function signedTx(t) {
 function signedVersement(v) {
   const a = Number(v.amount) || 0;
   return v.type === "retrait" ? -a : a;
+}
+function computeAccountAssetStats(account) {
+  const map = {};
+  account.transactions.forEach((t) => {
+    if (!t.etf) return;
+    if (!map[t.etf]) map[t.etf] = { qty: 0, montant: 0 };
+    const s = signedTx(t);
+    map[t.etf].qty += s.qty;
+    map[t.etf].montant += s.amount;
+  });
+  return map;
+}
+function accountAssetPieData(account) {
+  const stats = computeAccountAssetStats(account);
+  return Object.entries(stats)
+    .map(([name, s]) => ({ name, value: s.montant }))
+    .filter((d) => d.value > 0);
 }
 
 function makeAccount(name, kind) {
@@ -152,7 +193,16 @@ function useFontsLoaded() {
 
 function SectionCard({ children, style }) {
   return (
-    <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: 20, ...style }}>
+    <div
+      style={{
+        background: COLORS.card,
+        border: `1px solid ${COLORS.border}`,
+        borderLeft: `4px solid var(--accent, ${COLORS.gold})`,
+        borderRadius: 10,
+        padding: 20,
+        ...style,
+      }}
+    >
       {children}
     </div>
   );
@@ -270,6 +320,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const activeAccount = data.accounts.find((a) => a.id === data.activeAccountId) || data.accounts[0];
   const isCrypto = activeAccount.kind === "Crypto";
   const accent = KIND_ACCENT[activeAccount.kind] || COLORS.gold;
+  const headerBg = KIND_HEADER_BG[activeAccount.kind] || COLORS.navy;
   const addBtnStyle = { ...addBtnStyleBase, background: accent };
 
   const refreshPrices = async (symbols) => {
@@ -342,6 +393,66 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     return { rows, totalValue, totalVerseAll, totalDiff: totalValue - totalVerseAll };
   }, [data.accounts]);
 
+  const perAccountPies = useMemo(
+    () =>
+      data.accounts.map((a) => ({
+        id: a.id,
+        name: a.name,
+        kind: a.kind,
+        pieData: accountAssetPieData(a),
+      })),
+    [data.accounts]
+  );
+
+  const todaySummary = useMemo(() => {
+    const currentMonth = todayISO().slice(0, 7);
+    let versementsThisMonth = 0;
+    let lastDate = null;
+    let palierAtteints = 0;
+    let palierTotal = 0;
+    data.accounts.forEach((a) => {
+      a.versements.forEach((v) => {
+        if (monthKey(v.date) === currentMonth) versementsThisMonth++;
+        if (!lastDate || v.date > lastDate) lastDate = v.date;
+      });
+      if (a.kind === "Crypto") {
+        const stats = computeAccountAssetStats(a);
+        (a.sellTargets || []).forEach((s) => {
+          palierTotal++;
+          const st = stats[s.etf];
+          const pru = st && st.qty ? st.montant / st.qty : 0;
+          const targetPrice = pru * (1 + (Number(s.gainPct) || 0) / 100);
+          const live = cryptoPrices[(s.etf || "").toUpperCase()];
+          if (live && targetPrice > 0 && live >= targetPrice) palierAtteints++;
+        });
+      }
+    });
+    const daysSince = lastDate ? Math.floor((new Date(todayISO()) - new Date(lastDate)) / 86400000) : null;
+    return { versementsThisMonth, daysSince, palierAtteints, palierTotal };
+  }, [data.accounts, cryptoPrices]);
+
+  const comparisonData = useMemo(() => {
+    const allDates = new Set();
+    data.accounts.forEach((a) => a.valorisations.forEach((v) => { if (v.date) allDates.add(v.date); }));
+    const dates = Array.from(allDates).sort();
+    const byAccount = data.accounts.map((a) => ({
+      id: a.id, name: a.name, kind: a.kind,
+      sorted: [...a.valorisations].sort((x, y) => x.date.localeCompare(y.date)),
+    }));
+    const rows = dates.map((date) => {
+      const row = { date: fmtDate(date) };
+      byAccount.forEach((a) => {
+        const upto = a.sorted.filter((v) => v.date <= date);
+        row[a.name] = upto.length ? Number(upto[upto.length - 1].value) || 0 : null;
+      });
+      return row;
+    });
+    const series = byAccount
+      .filter((a) => a.sorted.length > 0)
+      .map((a) => ({ name: a.name, color: KIND_ACCENT[a.kind] || COLORS.gold }));
+    return { rows, series };
+  }, [data.accounts]);
+
   // ---------- Dérivés du compte actif ----------
   const etfList = useMemo(() => {
     const set = new Set(activeAccount.transactions.map((t) => t.etf).filter(Boolean));
@@ -372,10 +483,6 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     });
     return map;
   }, [activeAccount.transactions]);
-
-  const pieData = etfList
-    .map((etf) => ({ name: etf, value: perEtf[etf]?.montant || 0 }))
-    .filter((d) => d.value > 0);
 
   const sortedVersements = [...activeAccount.versements].sort((a, b) => a.date.localeCompare(b.date));
   const versementCumuleAt = (dateIso) =>
@@ -568,14 +675,25 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   return (
     <div style={{ background: COLORS.bg, minHeight: "100%", fontFamily: "Inter", color: COLORS.text, "--accent": accent }}>
       {/* Header */}
-      <div style={{ background: COLORS.navy, padding: "18px 20px 14px" }}>
+      <div style={{ background: headerBg, padding: "18px 20px 14px", transition: "background 0.35s ease" }}>
         <div className="pea-header-row">
           <div>
-            <div style={{ fontFamily: "Fraunces", fontWeight: 600, fontSize: 26, color: "#FFFFFF" }}>
-              Suivi de portefeuille
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontFamily: "Fraunces", fontWeight: 600, fontSize: 26, color: "#FFFFFF" }}>
+                Suivi de portefeuille
+              </div>
+              <span
+                style={{
+                  fontFamily: "IBM Plex Mono", fontSize: 11.5, fontWeight: 700, letterSpacing: 0.8,
+                  color: headerBg, background: accent, padding: "3px 9px", borderRadius: 5,
+                  textTransform: "uppercase",
+                }}
+              >
+                {(KIND_META[activeAccount.kind] || KIND_META.Autre).label}
+              </span>
             </div>
-            <div style={{ fontFamily: "Inter", fontSize: 12.5, color: "#9BB0C4", marginTop: 2 }}>
-              Profil : {profileName} {saving ? "· enregistrement…" : ""}
+            <div style={{ fontFamily: "Inter", fontSize: 12.5, color: "#9BB0C4", marginTop: 4 }}>
+              Profil : {profileName} · {activeAccount.name} {saving ? "· enregistrement…" : ""}
             </div>
           </div>
           <div className="pea-stats">
@@ -660,6 +778,29 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
         {tab === "vue" && (
           <>
+            <SectionCard style={{ padding: "14px 20px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 22px", alignItems: "center", fontFamily: "Inter", fontSize: 13 }}>
+                <span style={{ fontWeight: 700, color: COLORS.navy }}>Aujourd'hui</span>
+                <span style={{ color: COLORS.text }}>
+                  <strong style={{ fontFamily: "IBM Plex Mono" }}>{todaySummary.versementsThisMonth}</strong> versement{todaySummary.versementsThisMonth > 1 ? "s" : ""} ce mois-ci
+                </span>
+                <span style={{ color: COLORS.text }}>
+                  Dernier versement :{" "}
+                  <strong style={{ fontFamily: "IBM Plex Mono" }}>
+                    {todaySummary.daysSince === null ? "aucun" : todaySummary.daysSince === 0 ? "aujourd'hui" : `il y a ${todaySummary.daysSince} j`}
+                  </strong>
+                </span>
+                {todaySummary.palierTotal > 0 && (
+                  <span style={{ color: COLORS.text }}>
+                    Paliers de vente :{" "}
+                    <strong style={{ fontFamily: "IBM Plex Mono", color: todaySummary.palierAtteints > 0 ? COLORS.green : COLORS.text }}>
+                      {todaySummary.palierAtteints}/{todaySummary.palierTotal} atteint{todaySummary.palierAtteints > 1 ? "s" : ""}
+                    </strong>
+                  </span>
+                )}
+              </div>
+            </SectionCard>
+
             <SectionCard>
               <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
                 Vue d'ensemble
@@ -711,6 +852,29 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
               </div>
             </SectionCard>
 
+            {comparisonData.series.length > 0 && comparisonData.rows.length > 1 && (
+              <SectionCard>
+                <div style={{ fontFamily: "Fraunces", fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                  Comparateur de comptes
+                </div>
+                <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 12 }}>
+                  Évolution de la valorisation de chaque compte dans le temps (nécessite des entrées dans l'onglet Valorisation).
+                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={comparisonData.rows}>
+                    <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: "Inter" }} />
+                    <YAxis tick={{ fontSize: 11, fontFamily: "Inter" }} />
+                    <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                    <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 12.5 }} />
+                    {comparisonData.series.map((s) => (
+                      <Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </SectionCard>
+            )}
+
             <SectionCard>
               <div style={{ fontFamily: "Fraunces", fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
                 Répartition par compte
@@ -732,6 +896,8 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                           innerRadius={65}
                           outerRadius={120}
                           paddingAngle={2}
+                          label={renderPiePercentLabel}
+                          labelLine={false}
                         >
                           {overview.rows
                             .filter((r) => r.value > 0)
@@ -744,7 +910,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                               />
                             ))}
                         </Pie>
-                        <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                        <Tooltip formatter={pieTooltip(overview.totalValue)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -796,22 +962,22 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                         <input type="date" value={t.date} onChange={(e) => updateTransaction(t.id, "date", e.target.value)} style={inputStyle} />
                       </td>
                       <td style={td}>
-                        <select value={t.type || "achat"} onChange={(e) => updateTransaction(t.id, "type", e.target.value)} style={selectStyle}>
+                        <select value={t.type || "achat"} onChange={(e) => updateTransaction(t.id, "type", e.target.value)} style={{ ...selectStyle, minWidth: 90 }}>
                           <option value="achat">Achat</option>
                           <option value="vente">Vente</option>
                         </select>
                       </td>
                       <td style={td}>
-                        <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter" }} placeholder={isCrypto ? "BTC, ETH…" : "Nom du titre"} />
+                        <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
                       </td>
                       <td style={td}>
-                        <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5 }} placeholder={isCrypto ? "BTC" : "FR00..."} maxLength={16} />
+                        <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
                       </td>
                       <td style={{ ...td, textAlign: "right" }}>
-                        <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} />
+                        <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
                       </td>
                       <td style={{ ...td, textAlign: "right" }}>
-                        <input type="number" step="0.0001" value={t.cost} onChange={(e) => updateTransaction(t.id, "cost", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} />
+                        <input type="number" step="0.0001" value={t.cost} onChange={(e) => updateTransaction(t.id, "cost", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 45.20" />
                       </td>
                       <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 600, color: t.type === "vente" ? COLORS.red : COLORS.text }}>
                         {t.type === "vente" ? "− " : ""}{fmtMoney((Number(t.quantity) || 0) * (Number(t.cost) || 0))}
@@ -895,13 +1061,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                           <input type="date" value={v.date} onChange={(e) => updateVersement(v.id, "date", e.target.value)} style={inputStyle} />
                         </td>
                         <td style={td}>
-                          <select value={v.type || "depot"} onChange={(e) => updateVersement(v.id, "type", e.target.value)} style={selectStyle}>
+                          <select value={v.type || "depot"} onChange={(e) => updateVersement(v.id, "type", e.target.value)} style={{ ...selectStyle, minWidth: 90 }}>
                             <option value="depot">Dépôt</option>
                             <option value="retrait">Retrait</option>
                           </select>
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.01" value={v.amount} onChange={(e) => updateVersement(v.id, "amount", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} />
+                          <input type="number" step="0.01" value={v.amount} onChange={(e) => updateVersement(v.id, "amount", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 200" />
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
                           <RowActions onDelete={() => deleteVersement(v.id)} deleteLabel="ce versement" />
@@ -1051,13 +1217,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                                   <td style={{ ...td, fontWeight: 600 }}>#{i + 1}</td>
                                   <td style={{ ...td, textAlign: "right" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                                      <input type="number" step="1" value={s.gainPct} onChange={(e) => updateSellTarget(s.id, "gainPct", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 70 }} />
+                                      <input type="number" step="1" value={s.gainPct} onChange={(e) => updateSellTarget(s.id, "gainPct", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 70 }} placeholder="30" />
                                       <span style={{ color: COLORS.muted, fontSize: 12 }}>%</span>
                                     </div>
                                   </td>
                                   <td style={{ ...td, textAlign: "right" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                                      <input type="number" step="1" value={s.sellPct} onChange={(e) => updateSellTarget(s.id, "sellPct", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 70 }} />
+                                      <input type="number" step="1" value={s.sellPct} onChange={(e) => updateSellTarget(s.id, "sellPct", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 70 }} placeholder="25" />
                                       <span style={{ color: COLORS.muted, fontSize: 12 }}>%</span>
                                     </div>
                                   </td>
@@ -1147,16 +1313,16 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                     {targets.map((t) => (
                       <tr key={t.id}>
                         <td style={td}>
-                          <input list="etf-names" value={t.etf} onChange={(e) => updateTarget(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter" }} placeholder={isCrypto ? "BTC, ETH…" : "Nom de l'ETF"} />
+                          <input list="etf-names" value={t.etf} onChange={(e) => updateTarget(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
                         </td>
                         <td style={td}>
-                          <input value={t.isin || ""} onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5 }} placeholder={isCrypto ? "BTC" : "FR00..."} maxLength={16} />
+                          <input value={t.isin || ""} onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.1" value={t.targetPct} onChange={(e) => updateTarget(t.id, "targetPct", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} />
+                          <input type="number" step="0.1" value={t.targetPct} onChange={(e) => updateTarget(t.id, "targetPct", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 40" />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.0001" value={t.price} onChange={(e) => updateTarget(t.id, "price", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} />
+                          <input type="number" step="0.0001" value={t.price} onChange={(e) => updateTarget(t.id, "price", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 45.20" />
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
                           <RowActions onDelete={() => deleteTarget(t.id)} deleteLabel="cette ligne" />
@@ -1316,7 +1482,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                           <input type="date" value={r.date} onChange={(e) => updateValorisation(r.id, "date", e.target.value)} style={inputStyle} />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.01" value={r.value} onChange={(e) => updateValorisation(r.id, "value", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} />
+                          <input type="number" step="0.01" value={r.value} onChange={(e) => updateValorisation(r.id, "value", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 1250.00" />
                         </td>
                         <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", color: COLORS.muted }}>{fmtMoney(r.cumule)}</td>
                         <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 600, color: r.diff >= 0 ? COLORS.green : COLORS.red }}>
@@ -1374,38 +1540,93 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
         )}
 
         {tab === "repartition" && (
-          <SectionCard>
-            <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 4 }}>Répartition du portefeuille</div>
-            <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 10 }}>Basée sur le montant net investi par {assetLabel}.</div>
-            {pieData.length === 0 ? (
-              <div style={{ color: COLORS.muted, padding: 20 }}>Ajoute des opérations pour voir la répartition.</div>
-            ) : (
-              <div className="pea-pie-wrap">
-                <div className="pea-pie-chart">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={65} outerRadius={120} paddingAngle={2}>
-                        {pieData.map((d, i) => <Cell key={d.name} fill={PALETTE[i % PALETTE.length]} />)}
-                      </Pie>
-                      <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {pieData.map((d, i) => (
-                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 12, height: 12, borderRadius: 3, background: PALETTE[i % PALETTE.length] }} />
-                      <div style={{ fontFamily: "Inter", fontSize: 13.5, fontWeight: 600, width: 170 }}>{d.name}</div>
-                      <div style={{ fontFamily: "IBM Plex Mono", fontSize: 13.5 }}>{fmtMoney(d.value)}</div>
-                      <div style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5, color: COLORS.muted }}>
-                        {totalInvesti ? ((d.value / totalInvesti) * 100).toFixed(1) : "0.0"}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
+          <>
+            <SectionCard>
+              <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+                Répartition par actif, compte par compte
               </div>
-            )}
-          </SectionCard>
+              <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 14 }}>
+                Basée sur le montant net investi dans chaque actif. Clique sur un compte pour l'ouvrir.
+              </div>
+              <div className="pea-repartition-grid">
+                {perAccountPies.map((p) => {
+                  const Meta = KIND_META[p.kind] || KIND_META.Autre;
+                  const Icon = Meta.icon;
+                  const acctAccent = KIND_ACCENT[p.kind] || COLORS.gold;
+                  const total = p.pieData.reduce((s, d) => s + d.value, 0);
+                  return (
+                    <button key={p.id} className="pea-repart-card" onClick={() => goToAccount(p.id)}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+                        <div className="pea-overview-icon" style={{ background: acctAccent }}><Icon size={13} /></div>
+                        <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 13.5, color: COLORS.text }}>{p.name}</div>
+                      </div>
+                      {p.pieData.length === 0 ? (
+                        <div style={{ color: COLORS.muted, fontSize: 12, padding: "30px 0", textAlign: "center" }}>
+                          Pas encore de données
+                        </div>
+                      ) : (
+                        <>
+                          <ResponsiveContainer width="100%" height={190}>
+                            <PieChart>
+                              <Pie data={p.pieData} dataKey="value" nameKey="name" innerRadius={42} outerRadius={78} paddingAngle={2} label={renderPiePercentLabel} labelLine={false}>
+                                {p.pieData.map((d, i) => <Cell key={d.name} fill={PALETTE[i % PALETTE.length]} />)}
+                              </Pie>
+                              <Tooltip formatter={pieTooltip(total)} contentStyle={{ fontFamily: "Inter", fontSize: 12, borderRadius: 8 }} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                          <div style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5, color: COLORS.muted, textAlign: "center" }}>
+                            {fmtMoney(total)} investis
+                          </div>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </SectionCard>
+
+            <SectionCard>
+              <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+                Répartition globale par compte
+              </div>
+              <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 10 }}>
+                Comme dans la Vue d'ensemble — clique sur une part ou un compte pour l'ouvrir.
+              </div>
+              {overview.rows.filter((r) => r.value > 0).length === 0 ? (
+                <div style={{ color: COLORS.muted, padding: 20 }}>Pas encore de données à répartir.</div>
+              ) : (
+                <div className="pea-pie-wrap">
+                  <div className="pea-pie-chart">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie data={overview.rows.filter((r) => r.value > 0)} dataKey="value" nameKey="name" innerRadius={65} outerRadius={120} paddingAngle={2} label={renderPiePercentLabel} labelLine={false}>
+                          {overview.rows
+                            .filter((r) => r.value > 0)
+                            .map((r, i) => (
+                              <Cell key={r.id} fill={PALETTE[i % PALETTE.length]} cursor="pointer" onClick={() => goToAccount(r.id)} />
+                            ))}
+                        </Pie>
+                        <Tooltip formatter={pieTooltip(overview.totalValue)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {overview.rows.filter((r) => r.value > 0).map((r, i) => (
+                      <button key={r.id} className="pea-legend-row" onClick={() => goToAccount(r.id)}>
+                        <div style={{ width: 12, height: 12, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
+                        <div style={{ fontFamily: "Inter", fontSize: 13.5, fontWeight: 600, width: 140, textAlign: "left" }}>{r.name}</div>
+                        <div style={{ fontFamily: "IBM Plex Mono", fontSize: 13.5 }}>{fmtMoney(r.value)}</div>
+                        <div style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5, color: COLORS.muted }}>
+                          {overview.totalValue ? ((r.value / overview.totalValue) * 100).toFixed(1) : "0.0"}%
+                        </div>
+                        <ArrowRight size={13} color={COLORS.muted} style={{ marginLeft: "auto" }} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </SectionCard>
+          </>
         )}
       </div>
     </div>

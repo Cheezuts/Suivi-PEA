@@ -6,12 +6,26 @@ html, body, #root {
   padding: 0;
   min-height: 100vh;
   font-family: "Inter", sans-serif;
+  color-scheme: light;
 }
 button {
   font-family: inherit;
 }
-input {
+input, select {
   font-family: inherit;
+  color-scheme: light;
+  color: #1C2530;
+  -webkit-text-fill-color: #1C2530;
+  opacity: 1;
+}
+
+/* iOS zoome automatiquement la page si un champ a une taille de police < 16px au focus,
+   ce qui rend le texte tapé illisible/hors-écran dans les tableaux qui défilent horizontalement.
+   On force donc 16px minimum sur mobile, sans changer le rendu desktop. */
+@media (max-width: 640px) {
+  input, select {
+    font-size: 16px !important;
+  }
 }
 
 /* ---------- Header ---------- */
@@ -91,6 +105,24 @@ input {
 }
 .pea-legend-row:hover {
   background: #F4F5F1;
+}
+
+.pea-repartition-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.pea-repart-card {
+  text-align: left;
+  border: 1px solid #E3E1D8;
+  background: #FCFCFA;
+  border-radius: 10px;
+  padding: 12px 14px 6px;
+  cursor: pointer;
+}
+.pea-repart-card:hover {
+  border-color: var(--accent, #B8873A);
+  background: #FFFFFF;
 }
 
 /* ---------- Sélecteur de comptes ---------- */
