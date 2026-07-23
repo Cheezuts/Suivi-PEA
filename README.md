@@ -9,6 +9,8 @@ Application multi-comptes (PEA, Compte-titres, Crypto, Autre) de suivi de portef
 - **Achats & ventes** avec quantités nettes, coût moyen pondéré et **rendement en %** (pas seulement en €).
 - **Versements** (dépôts/retraits illimités) avec graphique mensuel, moyenne et jours depuis le dernier versement.
 - **Calculateur de répartition** : répartit un montant à verser entre tes actifs selon tes allocations cibles, en respectant l'achat par unité entière (sauf crypto, qui autorise les quantités fractionnées).
+- **Saisie en €, en $, ou en ne renseignant que 2 valeurs sur 3** : bascule €/$ (conversion automatique via l'API BCE) sur le prix d'achat et les versements ; pour une transaction, remplis la quantité *ou* le prix, puis le montant total — l'autre se calcule tout seul.
+- **Lignes triables, clonables et réordonnables** : clique un en-tête de colonne pour trier (ex. regrouper tous les BTC ensemble), duplique une ligne en un clic, ou réordonne-les manuellement avec les flèches ▲▼.
 - **Prix crypto en direct** : bouton "Actualiser les prix" qui va chercher les cours actuels via l'API publique CoinGecko (aucune clé requise).
 - **Paliers de vente crypto** : définis plusieurs paliers de prise de bénéfice par actif (ex. vendre 25 % quand le prix a pris +30 % par rapport à ton prix de revient moyen), avec barre de progression vers chaque palier.
 - **Objectifs d'épargne** : plusieurs objectifs par compte, montant visé, échéance optionnelle, barre de progression basée sur la valeur actuelle du compte.

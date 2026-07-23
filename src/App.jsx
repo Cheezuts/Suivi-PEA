@@ -7,12 +7,13 @@ import {
   Plus, Trash2, TrendingUp, PieChart as PieIcon, ListOrdered, Layers,
   Download, Upload, FileText, LogOut, Calculator, Landmark, Briefcase,
   Bitcoin, Wallet, ChevronDown, X, Wallet2, LayoutDashboard, ArrowRight,
-  Check, RefreshCw, Target,
+  Check, RefreshCw, Target, Copy, ArrowUp, ArrowDown, ChevronUp, ArrowUpDown,
 } from "lucide-react";
 import ProfileGate from "./ProfileGate.jsx";
 import { saveProfileData } from "./profiles.js";
 import { exportJSON, exportPDF, importJSONFile } from "./export.js";
 import { fetchCryptoPrices } from "./cryptoPrices.js";
+import { fetchUsdToEurRate } from "./fx.js";
 
 // ---------- Design tokens ----------
 const COLORS = {
@@ -255,6 +256,17 @@ function RowActions({ onDelete, deleteLabel }) {
     </div>
   );
 }
+function SortableTh({ col, label, align, sortCol, sortDir, onSort }) {
+  const active = sortCol === col;
+  return (
+    <th style={{ ...th, textAlign: align || "left", cursor: "pointer", userSelect: "none" }} onClick={() => onSort(col)}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+        {label}
+        {active ? (sortDir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ArrowUpDown size={11} style={{ opacity: 0.35 }} />}
+      </span>
+    </th>
+  );
+}
 function MiniStat({ label, value }) {
   return (
     <div style={{ background: "#FCFCFA", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px" }}>
@@ -286,6 +298,10 @@ const addBtnStyleOutline = {
   display: "flex", alignItems: "center", gap: 5, background: "transparent", color: COLORS.navy,
   border: `1px solid ${COLORS.navy}`, borderRadius: 6, padding: "7px 12px", fontFamily: "Inter", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
 };
+const miniIconBtnStyle = {
+  background: COLORS.goldLight, border: "none", borderRadius: 5, width: 22, height: 22,
+  display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0,
+};
 
 function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   useFontsLoaded();
@@ -301,6 +317,14 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const [cryptoPrices, setCryptoPrices] = useState({});
   const [pricesLoading, setPricesLoading] = useState(false);
   const [pricesError, setPricesError] = useState("");
+  const [usdRate, setUsdRate] = useState(null);
+  const [usdRateLoading, setUsdRateLoading] = useState(false);
+  const [costCcyMap, setCostCcyMap] = useState({});
+  const [costUsdDraftMap, setCostUsdDraftMap] = useState({});
+  const [versCcyMap, setVersCcyMap] = useState({});
+  const [versUsdDraftMap, setVersUsdDraftMap] = useState({});
+  const [txSortCol, setTxSortCol] = useState(null);
+  const [txSortDir, setTxSortDir] = useState("asc");
 
   const persist = useCallback(
     async (next) => {
@@ -340,6 +364,21 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
       return {};
     } finally {
       setPricesLoading(false);
+    }
+  };
+
+  const ensureUsdRate = async () => {
+    if (usdRate) return usdRate;
+    setUsdRateLoading(true);
+    try {
+      const r = await fetchUsdToEurRate();
+      setUsdRate(r);
+      return r;
+    } catch (e) {
+      setPricesError(e.message || "Impossible de récupérer le taux de change.");
+      return null;
+    } finally {
+      setUsdRateLoading(false);
     }
   };
 
@@ -484,6 +523,40 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     return map;
   }, [activeAccount.transactions]);
 
+  const displayedTransactions = useMemo(() => {
+    const withIdx = activeAccount.transactions.map((t, i) => ({ ...t, _idx: i }));
+    if (!txSortCol) return withIdx;
+    const dir = txSortDir === "asc" ? 1 : -1;
+    const arr = [...withIdx];
+    arr.sort((a, b) => {
+      let av, bv;
+      if (txSortCol === "montant") {
+        av = (Number(a.quantity) || 0) * (Number(a.cost) || 0);
+        bv = (Number(b.quantity) || 0) * (Number(b.cost) || 0);
+      } else if (txSortCol === "quantity" || txSortCol === "cost") {
+        av = Number(a[txSortCol]) || 0;
+        bv = Number(b[txSortCol]) || 0;
+      } else {
+        av = (a[txSortCol] || "").toString().toLowerCase();
+        bv = (b[txSortCol] || "").toString().toLowerCase();
+      }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+    return arr;
+  }, [activeAccount.transactions, txSortCol, txSortDir]);
+
+  const toggleTxSort = (col) => {
+    if (txSortCol === col) {
+      if (txSortDir === "asc") setTxSortDir("desc");
+      else { setTxSortCol(null); setTxSortDir("asc"); }
+    } else {
+      setTxSortCol(col);
+      setTxSortDir("asc");
+    }
+  };
+
   const sortedVersements = [...activeAccount.versements].sort((a, b) => a.date.localeCompare(b.date));
   const versementCumuleAt = (dateIso) =>
     sortedVersements.filter((v) => v.date <= dateIso).reduce((s, v) => s + signedVersement(v), 0);
@@ -539,6 +612,39 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   };
   const deleteTransaction = (id) => {
     patchActiveAccount({ transactions: activeAccount.transactions.filter((t) => t.id !== id) });
+  };
+  const cloneTransaction = (id) => {
+    const idx = activeAccount.transactions.findIndex((t) => t.id === id);
+    if (idx === -1) return;
+    const clone = { ...activeAccount.transactions[idx], id: uid() };
+    const next = [...activeAccount.transactions];
+    next.splice(idx + 1, 0, clone);
+    patchActiveAccount({ transactions: next });
+  };
+  const moveTransaction = (id, dir) => {
+    const idx = activeAccount.transactions.findIndex((t) => t.id === id);
+    const swapWith = idx + dir;
+    if (idx === -1 || swapWith < 0 || swapWith >= activeAccount.transactions.length) return;
+    const next = [...activeAccount.transactions];
+    [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+    patchActiveAccount({ transactions: next });
+  };
+  // Permet de ne renseigner que 2 des 3 valeurs (quantité / prix unitaire / montant total) :
+  // la troisième se déduit automatiquement — pratique pour la crypto ("j'ai mis 100€ dedans").
+  const handleMontantChange = (id, val) => {
+    const t = activeAccount.transactions.find((x) => x.id === id);
+    if (!t || val === "") return;
+    const m = Number(val);
+    if (!Number.isFinite(m)) return;
+    const q = Number(t.quantity) || 0;
+    const p = Number(t.cost) || 0;
+    if (q > 0 && !(p > 0)) {
+      updateTransaction(id, "cost", m / q);
+    } else if (p > 0 && !(q > 0)) {
+      updateTransaction(id, "quantity", m / p);
+    } else if (q > 0 && p > 0) {
+      updateTransaction(id, "cost", m / q);
+    }
   };
 
   // ---------- Mutateurs : versements ----------
@@ -935,59 +1041,129 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
 
         {tab === "operations" && (
           <SectionCard>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
               <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600 }}>
                 Achats & ventes {isCrypto ? "de cryptos" : "de titres"}
               </div>
               <button onClick={addTransaction} style={addBtnStyle}><Plus size={14} /> Ligne</button>
             </div>
+            <div style={{ fontSize: 12, color: COLORS.muted, marginBottom: 10 }}>
+              Astuce : pour une ligne, remplis la quantité <em>ou</em> le prix unitaire, puis le montant total en € —
+              l'autre se calcule automatiquement. Clique sur un en-tête de colonne pour trier ; les flèches ▲▼ ne
+              réordonnent manuellement que lorsqu'aucun tri n'est actif.
+              {txSortCol && (
+                <button
+                  onClick={() => { setTxSortCol(null); setTxSortDir("asc"); }}
+                  style={{ marginLeft: 8, border: "none", background: "none", color: COLORS.navy, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                >
+                  Réinitialiser le tri
+                </button>
+              )}
+            </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th style={th}>Date</th>
-                    <th style={th}>Type</th>
-                    <th style={th}>{isCrypto ? "Actif" : "ETF / titre"}</th>
-                    <th style={th}>Code / ISIN</th>
-                    <th style={{ ...th, textAlign: "right" }}>Quantité</th>
-                    <th style={{ ...th, textAlign: "right" }}>Prix unitaire</th>
-                    <th style={{ ...th, textAlign: "right" }}>Montant</th>
+                    <th style={th}>#</th>
+                    <SortableTh col="date" label="Date" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    <SortableTh col="type" label="Type" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    <SortableTh col="etf" label={isCrypto ? "Actif" : "ETF / titre"} sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    <SortableTh col="isin" label="Code / ISIN" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    <SortableTh col="quantity" label="Quantité" align="right" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    <SortableTh col="cost" label="Prix unitaire" align="right" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    <SortableTh col="montant" label="Montant" align="right" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
                     <th style={th}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeAccount.transactions.map((t) => (
-                    <tr key={t.id}>
-                      <td style={td}>
-                        <input type="date" value={t.date} onChange={(e) => updateTransaction(t.id, "date", e.target.value)} style={inputStyle} />
-                      </td>
-                      <td style={td}>
-                        <select value={t.type || "achat"} onChange={(e) => updateTransaction(t.id, "type", e.target.value)} style={{ ...selectStyle, minWidth: 90 }}>
-                          <option value="achat">Achat</option>
-                          <option value="vente">Vente</option>
-                        </select>
-                      </td>
-                      <td style={td}>
-                        <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
-                      </td>
-                      <td style={td}>
-                        <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
-                      </td>
-                      <td style={{ ...td, textAlign: "right" }}>
-                        <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
-                      </td>
-                      <td style={{ ...td, textAlign: "right" }}>
-                        <input type="number" step="0.0001" value={t.cost} onChange={(e) => updateTransaction(t.id, "cost", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 45.20" />
-                      </td>
-                      <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 600, color: t.type === "vente" ? COLORS.red : COLORS.text }}>
-                        {t.type === "vente" ? "− " : ""}{fmtMoney((Number(t.quantity) || 0) * (Number(t.cost) || 0))}
-                      </td>
-                      <td style={{ ...td, textAlign: "center" }}>
-                        <RowActions onDelete={() => deleteTransaction(t.id)} deleteLabel="cette opération" />
-                      </td>
-                    </tr>
-                  ))}
+                  {displayedTransactions.map((t, i) => {
+                    const ccy = costCcyMap[t.id] || "EUR";
+                    const montantVal = (Number(t.quantity) || 0) * (Number(t.cost) || 0);
+                    return (
+                      <tr key={t.id}>
+                        <td style={{ ...td, color: COLORS.muted, fontFamily: "IBM Plex Mono", fontSize: 12 }}>{i + 1}</td>
+                        <td style={td}>
+                          <input type="date" value={t.date} onChange={(e) => updateTransaction(t.id, "date", e.target.value)} style={inputStyle} />
+                        </td>
+                        <td style={td}>
+                          <select value={t.type || "achat"} onChange={(e) => updateTransaction(t.id, "type", e.target.value)} style={{ ...selectStyle, minWidth: 90 }}>
+                            <option value="achat">Achat</option>
+                            <option value="vente">Vente</option>
+                          </select>
+                        </td>
+                        <td style={td}>
+                          <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
+                        </td>
+                        <td style={td}>
+                          <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right", minWidth: 90 }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              {ccy === "EUR" ? (
+                                <input type="number" step="0.0001" value={t.cost} onChange={(e) => updateTransaction(t.id, "cost", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 92 }} placeholder="Ex. 45.20" />
+                              ) : (
+                                <input
+                                  type="number" step="0.0001"
+                                  value={costUsdDraftMap[t.id] ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setCostUsdDraftMap((prev) => ({ ...prev, [t.id]: v }));
+                                    if (usdRate && v !== "") updateTransaction(t.id, "cost", Number(v) * usdRate);
+                                  }}
+                                  style={{ ...inputStyle, textAlign: "right", width: 92 }}
+                                  placeholder="Ex. 49.00"
+                                />
+                              )}
+                              <div style={{ display: "flex", border: `1px solid ${COLORS.border}`, borderRadius: 5, overflow: "hidden", flexShrink: 0 }}>
+                                <button type="button" onClick={() => setCostCcyMap((p) => ({ ...p, [t.id]: "EUR" }))} style={{ border: "none", padding: "4px 6px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: ccy === "EUR" ? COLORS.navy : "#fff", color: ccy === "EUR" ? "#fff" : COLORS.muted }}>€</button>
+                                <button type="button" onClick={async () => { setCostCcyMap((p) => ({ ...p, [t.id]: "USD" })); await ensureUsdRate(); }} style={{ border: "none", padding: "4px 6px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: ccy === "USD" ? COLORS.navy : "#fff", color: ccy === "USD" ? "#fff" : COLORS.muted }}>$</button>
+                              </div>
+                            </div>
+                            {ccy === "USD" && (
+                              <div style={{ fontSize: 10.5, color: COLORS.muted }}>
+                                {usdRateLoading ? "Taux…" : usdRate ? `≈ ${fmtMoney(Number(t.cost) || 0, 2, 4)}` : "Taux indisponible"}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <input
+                            type="number" step="0.01"
+                            value={montantVal ? montantVal : ""}
+                            onChange={(e) => handleMontantChange(t.id, e.target.value)}
+                            style={{ ...inputStyle, textAlign: "right", minWidth: 95, fontWeight: 600, color: t.type === "vente" ? COLORS.red : COLORS.text }}
+                            placeholder="Ex. 100"
+                          />
+                        </td>
+                        <td style={{ ...td, textAlign: "center" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "center" }}>
+                            <button
+                              type="button" title="Monter"
+                              disabled={!!txSortCol || i === 0}
+                              onClick={() => moveTransaction(t.id, -1)}
+                              style={{ ...miniIconBtnStyle, opacity: !!txSortCol || i === 0 ? 0.3 : 1, cursor: !!txSortCol || i === 0 ? "default" : "pointer" }}
+                            ><ChevronUp size={13} color={COLORS.navy} /></button>
+                            <button
+                              type="button" title="Descendre"
+                              disabled={!!txSortCol || i === displayedTransactions.length - 1}
+                              onClick={() => moveTransaction(t.id, 1)}
+                              style={{ ...miniIconBtnStyle, opacity: !!txSortCol || i === displayedTransactions.length - 1 ? 0.3 : 1, cursor: !!txSortCol || i === displayedTransactions.length - 1 ? "default" : "pointer" }}
+                            ><ChevronDown size={13} color={COLORS.navy} /></button>
+                            <button type="button" title="Dupliquer cette ligne" onClick={() => cloneTransaction(t.id)} style={miniIconBtnStyle}>
+                              <Copy size={13} color={COLORS.navy} />
+                            </button>
+                            <RowActions onDelete={() => deleteTransaction(t.id)} deleteLabel="cette opération" />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                   <tr>
+                    <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}`, fontWeight: 700 }}>Total net</td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
@@ -1067,7 +1243,34 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                           </select>
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.01" value={v.amount} onChange={(e) => updateVersement(v.id, "amount", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 200" />
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              {(versCcyMap[v.id] || "EUR") === "EUR" ? (
+                                <input type="number" step="0.01" value={v.amount} onChange={(e) => updateVersement(v.id, "amount", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 100 }} placeholder="Ex. 200" />
+                              ) : (
+                                <input
+                                  type="number" step="0.01"
+                                  value={versUsdDraftMap[v.id] ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setVersUsdDraftMap((prev) => ({ ...prev, [v.id]: val }));
+                                    if (usdRate && val !== "") updateVersement(v.id, "amount", Number(val) * usdRate);
+                                  }}
+                                  style={{ ...inputStyle, textAlign: "right", width: 100 }}
+                                  placeholder="Ex. 220"
+                                />
+                              )}
+                              <div style={{ display: "flex", border: `1px solid ${COLORS.border}`, borderRadius: 5, overflow: "hidden", flexShrink: 0 }}>
+                                <button type="button" onClick={() => setVersCcyMap((p) => ({ ...p, [v.id]: "EUR" }))} style={{ border: "none", padding: "4px 6px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: (versCcyMap[v.id] || "EUR") === "EUR" ? COLORS.navy : "#fff", color: (versCcyMap[v.id] || "EUR") === "EUR" ? "#fff" : COLORS.muted }}>€</button>
+                                <button type="button" onClick={async () => { setVersCcyMap((p) => ({ ...p, [v.id]: "USD" })); await ensureUsdRate(); }} style={{ border: "none", padding: "4px 6px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: versCcyMap[v.id] === "USD" ? COLORS.navy : "#fff", color: versCcyMap[v.id] === "USD" ? "#fff" : COLORS.muted }}>$</button>
+                              </div>
+                            </div>
+                            {versCcyMap[v.id] === "USD" && (
+                              <div style={{ fontSize: 10.5, color: COLORS.muted }}>
+                                {usdRateLoading ? "Taux…" : usdRate ? `≈ ${fmtMoney(Number(v.amount) || 0)}` : "Taux indisponible"}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
                           <RowActions onDelete={() => deleteVersement(v.id)} deleteLabel="ce versement" />
