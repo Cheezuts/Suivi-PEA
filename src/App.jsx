@@ -180,6 +180,14 @@ function normalizeData(raw) {
   return { accounts: [acc], activeAccountId: acc.id };
 }
 
+function useScrollToRow(id, prefix) {
+  useEffect(() => {
+    if (!id) return;
+    const el = document.getElementById(`${prefix}-${id}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [id, prefix]);
+}
+
 function useFontsLoaded() {
   useEffect(() => {
     if (document.getElementById("pea-tracker-fonts")) return;
@@ -319,12 +327,17 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const [pricesError, setPricesError] = useState("");
   const [usdRate, setUsdRate] = useState(null);
   const [usdRateLoading, setUsdRateLoading] = useState(false);
+  const [usdRateError, setUsdRateError] = useState("");
   const [costCcyMap, setCostCcyMap] = useState({});
   const [costUsdDraftMap, setCostUsdDraftMap] = useState({});
   const [versCcyMap, setVersCcyMap] = useState({});
   const [versUsdDraftMap, setVersUsdDraftMap] = useState({});
   const [txSortCol, setTxSortCol] = useState(null);
   const [txSortDir, setTxSortDir] = useState("asc");
+  const [selectedTxId, setSelectedTxId] = useState(null);
+  const [selectedVersId, setSelectedVersId] = useState(null);
+  useScrollToRow(selectedTxId, "tx-row");
+  useScrollToRow(selectedVersId, "vers-row");
 
   const persist = useCallback(
     async (next) => {
@@ -370,12 +383,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const ensureUsdRate = async () => {
     if (usdRate) return usdRate;
     setUsdRateLoading(true);
+    setUsdRateError("");
     try {
       const r = await fetchUsdToEurRate();
       setUsdRate(r);
       return r;
     } catch (e) {
-      setPricesError(e.message || "Impossible de récupérer le taux de change.");
+      setUsdRateError(e.message || "Impossible de récupérer le taux de change.");
       return null;
     } finally {
       setUsdRateLoading(false);
@@ -598,12 +612,9 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
 
   // ---------- Mutateurs : transactions ----------
   const addTransaction = () => {
-    patchActiveAccount({
-      transactions: [
-        ...activeAccount.transactions,
-        { id: uid(), date: todayISO(), etf: etfList[0] || "", isin: etfList[0] ? isinByEtf[etfList[0]] || "" : "", type: "achat", quantity: "", cost: "" },
-      ],
-    });
+    const newTx = { id: uid(), date: todayISO(), etf: etfList[0] || "", isin: etfList[0] ? isinByEtf[etfList[0]] || "" : "", type: "achat", quantity: "", cost: "" };
+    patchActiveAccount({ transactions: [...activeAccount.transactions, newTx] });
+    setSelectedTxId(newTx.id);
   };
   const updateTransaction = (id, field, value) => {
     patchActiveAccount({
@@ -620,6 +631,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     const next = [...activeAccount.transactions];
     next.splice(idx + 1, 0, clone);
     patchActiveAccount({ transactions: next });
+    setSelectedTxId(clone.id);
   };
   const moveTransaction = (id, dir) => {
     const idx = activeAccount.transactions.findIndex((t) => t.id === id);
@@ -649,7 +661,9 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
 
   // ---------- Mutateurs : versements ----------
   const addVersement = () => {
-    patchActiveAccount({ versements: [...activeAccount.versements, { id: uid(), date: todayISO(), type: "depot", amount: "" }] });
+    const newVers = { id: uid(), date: todayISO(), type: "depot", amount: "" };
+    patchActiveAccount({ versements: [...activeAccount.versements, newVers] });
+    setSelectedVersId(newVers.id);
   };
   const updateVersement = (id, field, value) => {
     patchActiveAccount({ versements: activeAccount.versements.map((v) => (v.id === id ? { ...v, [field]: value } : v)) });
@@ -1079,8 +1093,18 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                   {displayedTransactions.map((t, i) => {
                     const ccy = costCcyMap[t.id] || "EUR";
                     const montantVal = (Number(t.quantity) || 0) * (Number(t.cost) || 0);
+                    const isSelected = selectedTxId === t.id;
                     return (
-                      <tr key={t.id}>
+                      <tr
+                        key={t.id}
+                        id={`tx-row-${t.id}`}
+                        onClick={() => setSelectedTxId(t.id)}
+                        style={{
+                          background: isSelected ? COLORS.goldLight : "transparent",
+                          boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : "none",
+                          transition: "background 0.2s",
+                        }}
+                      >
                         <td style={{ ...td, color: COLORS.muted, fontFamily: "IBM Plex Mono", fontSize: 12 }}>{i + 1}</td>
                         <td style={td}>
                           <input type="date" value={t.date} onChange={(e) => updateTransaction(t.id, "date", e.target.value)} style={inputStyle} />
@@ -1125,7 +1149,15 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                             </div>
                             {ccy === "USD" && (
                               <div style={{ fontSize: 10.5, color: COLORS.muted }}>
-                                {usdRateLoading ? "Taux…" : usdRate ? `≈ ${fmtMoney(Number(t.cost) || 0, 2, 4)}` : "Taux indisponible"}
+                                {usdRateLoading ? (
+                                  "Taux…"
+                                ) : usdRate ? (
+                                  `≈ ${fmtMoney(Number(t.cost) || 0, 2, 4)}`
+                                ) : (
+                                  <span style={{ color: COLORS.red }}>
+                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.navy, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1232,7 +1264,16 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                   </thead>
                   <tbody>
                     {sortedVersements.map((v) => (
-                      <tr key={v.id}>
+                      <tr
+                        key={v.id}
+                        id={`vers-row-${v.id}`}
+                        onClick={() => setSelectedVersId(v.id)}
+                        style={{
+                          background: selectedVersId === v.id ? COLORS.goldLight : "transparent",
+                          boxShadow: selectedVersId === v.id ? `inset 3px 0 0 0 ${accent}` : "none",
+                          transition: "background 0.2s",
+                        }}
+                      >
                         <td style={td}>
                           <input type="date" value={v.date} onChange={(e) => updateVersement(v.id, "date", e.target.value)} style={inputStyle} />
                         </td>
@@ -1267,7 +1308,15 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                             </div>
                             {versCcyMap[v.id] === "USD" && (
                               <div style={{ fontSize: 10.5, color: COLORS.muted }}>
-                                {usdRateLoading ? "Taux…" : usdRate ? `≈ ${fmtMoney(Number(v.amount) || 0)}` : "Taux indisponible"}
+                                {usdRateLoading ? (
+                                  "Taux…"
+                                ) : usdRate ? (
+                                  `≈ ${fmtMoney(Number(v.amount) || 0)}`
+                                ) : (
+                                  <span style={{ color: COLORS.red }}>
+                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.navy, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
