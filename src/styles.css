@@ -36,9 +36,12 @@ button {
 input, select {
   font-family: inherit;
   color-scheme: light;
-  color: #1C2530;
-  -webkit-text-fill-color: #1C2530;
+  color: var(--pea-text, #1C2530);
+  -webkit-text-fill-color: var(--pea-text, #1C2530);
   opacity: 1;
+}
+html.dark input, html.dark select {
+  color-scheme: dark;
 }
 
 /* iOS zoome automatiquement la page si un champ a une taille de police < 16px au focus,
@@ -483,7 +486,7 @@ input, select {
 }
 .gate-selected {
   font-size: 13.5px;
-  color: #1C2530;
+  color: var(--pea-text, #1C2530);
   display: flex;
   align-items: center;
   gap: 8px;

@@ -285,7 +285,7 @@ function MiniStat({ label, value }) {
       <div style={{ fontFamily: "Inter", fontSize: 11, letterSpacing: 0.4, textTransform: "uppercase", color: COLORS.muted }}>
         {label}
       </div>
-      <div style={{ fontFamily: "IBM Plex Mono", fontSize: 17, fontWeight: 600, color: COLORS.navy, marginTop: 2 }}>
+      <div style={{ fontFamily: "IBM Plex Mono", fontSize: 17, fontWeight: 600, color: COLORS.text, marginTop: 2 }}>
         {value}
       </div>
     </div>
@@ -307,8 +307,8 @@ const addBtnStyleBase = {
   border: "none", borderRadius: 6, padding: "7px 12px", fontFamily: "Inter", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
 };
 const addBtnStyleOutline = {
-  display: "flex", alignItems: "center", gap: 5, background: "transparent", color: COLORS.navy,
-  border: `1px solid ${COLORS.navy}`, borderRadius: 6, padding: "7px 12px", fontFamily: "Inter", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
+  display: "flex", alignItems: "center", gap: 5, background: "transparent", color: COLORS.text,
+  border: `1px solid ${COLORS.text}`, borderRadius: 6, padding: "7px 12px", fontFamily: "Inter", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
 };
 const miniIconBtnStyle = {
   background: COLORS.goldLight, border: "none", borderRadius: 5, width: 22, height: 22,
@@ -330,7 +330,7 @@ function TutorialModal({ onClose }) {
     <div className="pea-modal-overlay" onClick={onClose}>
       <div className="pea-modal" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontFamily: "Fraunces", fontSize: 20, fontWeight: 700, color: COLORS.navy }}>Guide rapide</div>
+          <div style={{ fontFamily: "Fraunces", fontSize: 20, fontWeight: 700, color: COLORS.text }}>Guide rapide</div>
           <button onClick={onClose} className="pea-modal-close"><X size={16} /></button>
         </div>
         <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 16 }}>
@@ -339,12 +339,12 @@ function TutorialModal({ onClose }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
           {sections.map((s) => (
             <div key={s.title}>
-              <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 13.5, color: COLORS.navy }}>{s.title}</div>
+              <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 13.5, color: COLORS.text }}>{s.title}</div>
               <div style={{ fontFamily: "Inter", fontSize: 12.5, color: COLORS.text }}>{s.text}</div>
             </div>
           ))}
         </div>
-        <div style={{ fontFamily: "Fraunces", fontSize: 15, fontWeight: 600, color: COLORS.navy, marginBottom: 8 }}>
+        <div style={{ fontFamily: "Fraunces", fontSize: 15, fontWeight: 600, color: COLORS.text, marginBottom: 8 }}>
           Raccourcis & astuces
         </div>
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: COLORS.text, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1082,7 +1082,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
           <>
             <SectionCard style={{ padding: "14px 20px" }}>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 22px", alignItems: "center", fontFamily: "Inter", fontSize: 13 }}>
-                <span style={{ fontWeight: 700, color: COLORS.navy }}>Aujourd'hui</span>
+                <span style={{ fontWeight: 700, color: COLORS.text }}>Aujourd'hui</span>
                 <span style={{ color: COLORS.text }}>
                   <strong style={{ fontFamily: "IBM Plex Mono" }}>{todaySummary.versementsThisMonth}</strong> versement{todaySummary.versementsThisMonth > 1 ? "s" : ""} ce mois-ci
                 </span>
@@ -1153,7 +1153,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         </div>
                         <ArrowRight size={14} color={COLORS.muted} style={{ marginLeft: "auto" }} />
                       </div>
-                      <div style={{ fontFamily: "IBM Plex Mono", fontSize: 20, fontWeight: 700, color: COLORS.navy }}>
+                      <div style={{ fontFamily: "IBM Plex Mono", fontSize: 20, fontWeight: 700, color: COLORS.text }}>
                         {r.estimated ? "≈ " : ""}{fmtMoney(r.value)}
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12, fontFamily: "IBM Plex Mono", color: COLORS.muted }}>
@@ -1181,7 +1181,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                     <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
                     <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: "Inter" }} />
                     <YAxis tick={{ fontSize: 11, fontFamily: "Inter" }} />
-                    <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                    <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                     <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 12.5 }} />
                     {comparisonData.series.map((s) => (
                       <Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
@@ -1226,7 +1226,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                               />
                             ))}
                         </Pie>
-                        <Tooltip formatter={pieTooltip(overview.totalValue)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                        <Tooltip formatter={pieTooltip(overview.totalValue)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -1264,7 +1264,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
               {txSortCol && (
                 <button
                   onClick={() => { setTxSortCol(null); setTxSortDir("asc"); }}
-                  style={{ marginLeft: 8, border: "none", background: "none", color: COLORS.navy, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                  style={{ marginLeft: 8, border: "none", background: "none", color: COLORS.text, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
                 >
                   Réinitialiser le tri
                 </button>
@@ -1379,7 +1379,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                                   `≈ ${fmtMoney(Number(t.cost) || 0, 2, 4)}`
                                 ) : (
                                   <span style={{ color: COLORS.red }}>
-                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.navy, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
+                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.text, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
                                   </span>
                                 )}
                               </div>
@@ -1461,7 +1461,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                     <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fontFamily: "Inter" }} />
                     <YAxis tick={{ fontSize: 11, fontFamily: "Inter" }} />
-                    <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                    <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                     <Bar dataKey="net" radius={[3, 3, 0, 0]}>
                       {versementMonthly.map((d, i) => (
                         <Cell key={i} fill={d.net >= 0 ? COLORS.green : COLORS.red} />
@@ -1539,7 +1539,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                                   `≈ ${fmtMoney(Number(v.amount) || 0)}`
                                 ) : (
                                   <span style={{ color: COLORS.red }}>
-                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.navy, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
+                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.text, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
                                   </span>
                                 )}
                               </div>
@@ -1649,7 +1649,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                             <Tooltip
                               formatter={(v) => fmtMoney(v, 2, 4)}
                               labelFormatter={(t) => new Date(t).toLocaleDateString("fr-FR")}
-                              contentStyle={{ fontFamily: "Inter", fontSize: 11.5, borderRadius: 8 }}
+                              contentStyle={{ fontFamily: "Inter", fontSize: 11.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
                             />
                           </LineChart>
                         </ResponsiveContainer>
@@ -1959,7 +1959,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12.5, fontFamily: "IBM Plex Mono" }}>
                             <span style={{ color: COLORS.muted }}>{fmtMoney(currentValue)} / {fmtMoney(target)}</span>
-                            <span style={{ fontWeight: 700, color: COLORS.navy }}>{progress.toFixed(0)}%</span>
+                            <span style={{ fontWeight: 700, color: COLORS.text }}>{progress.toFixed(0)}%</span>
                           </div>
                         </>
                       )}
@@ -2031,7 +2031,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                       <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
                       <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: "Inter" }} />
                       <YAxis tick={{ fontSize: 11, fontFamily: "Inter" }} />
-                      <Tooltip contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                      <Tooltip contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                       <Legend wrapperStyle={{ fontFamily: "Inter", fontSize: 12.5 }} />
                       <Line type="monotone" dataKey="Valorisation" stroke={COLORS.gold} strokeWidth={2.5} dot={{ r: 3 }} />
                       <Line type="monotone" dataKey="Versements cumulés" stroke={COLORS.navyLight} strokeWidth={2} dot={false} strokeDasharray="4 3" />
@@ -2045,7 +2045,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                       <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
                       <XAxis dataKey="date" tick={{ fontSize: 11, fontFamily: "Inter" }} />
                       <YAxis tick={{ fontSize: 11, fontFamily: "Inter" }} />
-                      <Tooltip contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                      <Tooltip contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                       <Bar dataKey="diff" radius={[3, 3, 0, 0]}>
                         {chartBarData.map((d, i) => <Cell key={i} fill={d.diff >= 0 ? COLORS.green : COLORS.red} />)}
                       </Bar>
@@ -2089,7 +2089,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                               <Pie data={p.pieData} dataKey="value" nameKey="name" innerRadius={42} outerRadius={78} paddingAngle={2} label={renderPiePercentLabel} labelLine={false}>
                                 {p.pieData.map((d, i) => <Cell key={d.name} fill={PALETTE[i % PALETTE.length]} />)}
                               </Pie>
-                              <Tooltip formatter={pieTooltip(total)} contentStyle={{ fontFamily: "Inter", fontSize: 12, borderRadius: 8 }} />
+                              <Tooltip formatter={pieTooltip(total)} contentStyle={{ fontFamily: "Inter", fontSize: 12, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                             </PieChart>
                           </ResponsiveContainer>
                           <div style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5, color: COLORS.muted, textAlign: "center" }}>
@@ -2124,7 +2124,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                               <Cell key={r.id} fill={PALETTE[i % PALETTE.length]} cursor="pointer" onClick={() => goToAccount(r.id)} />
                             ))}
                         </Pie>
-                        <Tooltip formatter={pieTooltip(overview.totalValue)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8 }} />
+                        <Tooltip formatter={pieTooltip(overview.totalValue)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
