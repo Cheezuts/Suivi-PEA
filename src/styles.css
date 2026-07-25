@@ -1,6 +1,28 @@
 * {
   box-sizing: border-box;
 }
+:root {
+  --pea-bg: #F4F5F1;
+  --pea-card: #FFFFFF;
+  --pea-card-alt: #FCFCFA;
+  --pea-border: #E3E1D8;
+  --pea-text: #1C2530;
+  --pea-muted: #6B7280;
+}
+html.dark {
+  --pea-bg: #15171B;
+  --pea-card: #1F222A;
+  --pea-card-alt: #262A33;
+  --pea-border: #333844;
+  --pea-text: #E7E9EC;
+  --pea-muted: #9AA1AC;
+}
+html.dark body {
+  background: var(--pea-bg);
+}
+html.dark ::selection {
+  background: #B8873A66;
+}
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -249,6 +271,69 @@ input, select {
   th, td {
     padding: 6px 6px !important;
   }
+  /* Cibles tactiles agrandies (recommandation Apple/Google : 36-44px minimum) */
+  .pea-toolbtn, .pea-refresh-btn, .pea-acc-btn, .pea-acc-del, .pea-acc-add {
+    min-height: 38px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  /* Vue "carte" pour la table Opérations : chaque ligne devient un bloc, chaque
+     cellule s'empile verticalement avec son libellé, au lieu d'un tableau étroit. */
+  .pea-card-table thead {
+    display: none;
+  }
+  .pea-card-table, .pea-card-table tbody, .pea-card-table tr {
+    display: block;
+    width: 100%;
+  }
+  .pea-card-table tr {
+    border: 1px solid var(--pea-border, #E3E1D8);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    position: relative;
+    touch-action: pan-y;
+  }
+  .pea-card-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: none !important;
+    padding: 7px 0 !important;
+    border-bottom: 1px solid var(--pea-border, #E3E1D8) !important;
+  }
+  .pea-card-table td:last-child {
+    border-bottom: none !important;
+    justify-content: flex-end;
+  }
+  .pea-card-table td[data-label]::before {
+    content: attr(data-label);
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--pea-muted, #6B7280);
+    flex-shrink: 0;
+  }
+  /* La cellule poignée (glisser-déposer, peu utile au doigt) est masquée sur mobile,
+     remplacée par le geste de glissement latéral pour supprimer. */
+  .pea-card-table td:first-child {
+    display: none;
+  }
+  .pea-card-table td input,
+  .pea-card-table td select {
+    max-width: 62%;
+  }
+}
+@media (min-width: 641px) and (max-width: 1024px) {
+  .pea-tablet-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
 }
 
 /* ---------- Profile gate ---------- */
@@ -261,7 +346,7 @@ input, select {
   padding: 20px;
 }
 .gate-card {
-  background: #F4F5F1;
+  background: var(--pea-bg, #F4F5F1);
   border-radius: 14px;
   padding: 28px 26px;
   width: 100%;
@@ -271,11 +356,11 @@ input, select {
   font-family: "Fraunces", serif;
   font-weight: 700;
   font-size: 26px;
-  color: #10233B;
+  color: var(--pea-text, #10233B);
 }
 .gate-sub {
   font-size: 12.5px;
-  color: #6B7280;
+  color: var(--pea-muted, #6B7280);
   margin-top: 6px;
   line-height: 1.5;
 }
@@ -293,9 +378,9 @@ input, select {
   gap: 6px;
   padding: 9px 10px;
   border-radius: 7px;
-  border: 1px solid #E3E1D8;
-  background: #FFFFFF;
-  color: #6B7280;
+  border: 1px solid var(--pea-border, #E3E1D8);
+  background: var(--pea-card, #FFFFFF);
+  color: var(--pea-muted, #6B7280);
   font-weight: 600;
   font-size: 12.5px;
   cursor: pointer;
@@ -319,8 +404,8 @@ input, select {
   align-items: stretch;
   gap: 0;
   border-radius: 8px;
-  border: 1px solid #E3E1D8;
-  background: #FFFFFF;
+  border: 1px solid var(--pea-border, #E3E1D8);
+  background: var(--pea-card, #FFFFFF);
   overflow: hidden;
 }
 .gate-profile:hover {
@@ -336,7 +421,7 @@ input, select {
   background: transparent;
   font-weight: 600;
   font-size: 14px;
-  color: #1C2530;
+  color: var(--pea-text, #1C2530);
   cursor: pointer;
   text-align: left;
 }
@@ -346,8 +431,8 @@ input, select {
   justify-content: center;
   width: 38px;
   border: none;
-  border-left: 1px solid #E3E1D8;
-  background: #FCFCFA;
+  border-left: 1px solid var(--pea-border, #E3E1D8);
+  background: var(--pea-card-alt, #FCFCFA);
   color: #B5484D;
   cursor: pointer;
 }
@@ -355,7 +440,7 @@ input, select {
   background: #FBEAEA;
 }
 .gate-empty {
-  color: #6B7280;
+  color: var(--pea-muted, #6B7280);
   font-size: 13px;
   padding: 10px 0;
 }
@@ -367,9 +452,10 @@ input, select {
 .gate-input {
   padding: 10px 12px;
   border-radius: 7px;
-  border: 1px solid #E3E1D8;
+  border: 1px solid var(--pea-border, #E3E1D8);
   font-size: 14px;
-  background: #FFFFFF;
+  background: var(--pea-card, #FFFFFF);
+  color: var(--pea-text, #1C2530);
 }
 .gate-btn {
   padding: 11px;
@@ -417,10 +503,22 @@ input, select {
 
 /* ---------- Objectifs d'épargne ---------- */
 .pea-goal-card {
-  border: 1px solid #E3E1D8;
+  border: 1px solid var(--pea-border, #E3E1D8);
   border-radius: 10px;
   padding: 14px 16px;
-  background: #FCFCFA;
+  background: var(--pea-card-alt, #FCFCFA);
+}
+.pea-goals-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (min-width: 720px) {
+  .pea-goals-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
 }
 .pea-progress-track {
   width: 100%;
@@ -462,6 +560,88 @@ input, select {
 @keyframes pea-spin-anim {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ---------- Confirmation de suppression par glissement (mobile) ---------- */
+.pea-swipe-confirm {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  background: #1C2530;
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  font-family: "Inter";
+}
+.pea-swipe-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.pea-swipe-btn-cancel {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+.pea-swipe-btn-danger {
+  background: #B5484D;
+  color: #fff;
+}
+@media (max-width: 640px) {
+  .pea-card-table tr::after {
+    content: "← glisser pour supprimer";
+    position: absolute;
+    right: 10px;
+    bottom: 4px;
+    font-size: 9.5px;
+    color: var(--pea-muted, #6B7280);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}
+
+/* ---------- Modal (tutoriel) ---------- */
+.pea-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 20, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.pea-modal {
+  background: var(--pea-card, #FFFFFF);
+  color: var(--pea-text, #1C2530);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.pea-modal-close {
+  border: none;
+  background: var(--pea-card-alt, #FCFCFA);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--pea-text, #1C2530);
+  flex-shrink: 0;
 }
 
 /* ---------- Print (export navigateur en complément du PDF généré) ---------- */

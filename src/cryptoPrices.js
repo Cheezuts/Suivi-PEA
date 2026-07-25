@@ -18,8 +18,19 @@ export const CRYPTO_IDS = {
   BCH: "bitcoin-cash", XMR: "monero", IMX: "immutable-x", INJ: "injective-protocol",
 };
 
-// Retourne { SYMBOL: prixEnEuros } pour les symboles reconnus. Les symboles non reconnus
-// sont simplement ignorés (à saisir manuellement dans l'app).
+// Historique de prix (pour un petit graphique) sur les N derniers jours.
+// Retourne un tableau de points {t: timestamp, price} ou null si le symbole n'est pas reconnu.
+export async function fetchCryptoHistory(symbol, days = 30) {
+  const id = CRYPTO_IDS[(symbol || "").trim().toUpperCase()];
+  if (!id) return null;
+  const url = `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=eur&days=${days}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Historique indisponible.");
+  const json = await res.json();
+  if (!Array.isArray(json.prices)) return null;
+  return json.prices.map(([t, price]) => ({ t, price }));
+}
+
 export async function fetchCryptoPrices(symbols) {
   const uniqueSymbols = Array.from(new Set(symbols.map((s) => (s || "").trim().toUpperCase()).filter(Boolean)));
   const ids = uniqueSymbols.map((s) => CRYPTO_IDS[s]).filter(Boolean);

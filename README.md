@@ -11,7 +11,10 @@ Application multi-comptes (PEA, Compte-titres, Crypto, Autre) de suivi de portef
 - **Calculateur de répartition** : répartit un montant à verser entre tes actifs selon tes allocations cibles, en respectant l'achat par unité entière (sauf crypto, qui autorise les quantités fractionnées).
 - **Saisie en €, en $, ou en ne renseignant que 2 valeurs sur 3** : bascule €/$ (conversion automatique via l'API BCE) sur le prix d'achat et les versements ; pour une transaction, remplis la quantité *ou* le prix, puis le montant total — l'autre se calcule tout seul.
 - **Lignes triables, clonables et réordonnables** : clique un en-tête de colonne pour trier (ex. regrouper tous les BTC ensemble), duplique une ligne en un clic, ou réordonne-les manuellement avec les flèches ▲▼.
-- **Prix crypto en direct** : bouton "Actualiser les prix" qui va chercher les cours actuels via l'API publique CoinGecko (aucune clé requise).
+- **Prix crypto en direct** : bouton "Actualiser les prix" qui va chercher les cours actuels via l'API publique CoinGecko (aucune clé requise), plus un mini-graphique d'historique (7/30/90 jours) par actif.
+- **Ergonomie mobile/tablette/PC** : vue "carte" sur mobile pour les opérations, glisser pour supprimer une ligne (mobile), glisser-déposer pour réordonner (PC), disposition 2 colonnes sur tablette, boutons agrandis au toucher, mode sombre.
+- **Raccourcis clavier** : `N` (nouvelle ligne), `Ctrl+Z` (annuler la dernière modification), `?` (ouvrir le guide). Un tutoriel intégré explique chaque onglet et ces raccourcis (bouton "Aide").
+- **Export CSV** en plus du PDF/JSON, et un bandeau de rappel si tu n'as pas exporté depuis longtemps.
 - **Paliers de vente crypto** : définis plusieurs paliers de prise de bénéfice par actif (ex. vendre 25 % quand le prix a pris +30 % par rapport à ton prix de revient moyen), avec barre de progression vers chaque palier.
 - **Objectifs d'épargne** : plusieurs objectifs par compte, montant visé, échéance optionnelle, barre de progression basée sur la valeur actuelle du compte.
 - **Confirmation à la suppression** de n'importe quelle ligne, et bouton de confirmation visuelle à la saisie (les données sont en réalité sauvegardées en continu, ce bouton sert de repère visuel).

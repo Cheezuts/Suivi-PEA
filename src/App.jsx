@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -8,26 +8,28 @@ import {
   Download, Upload, FileText, LogOut, Calculator, Landmark, Briefcase,
   Bitcoin, Wallet, ChevronDown, X, Wallet2, LayoutDashboard, ArrowRight,
   Check, RefreshCw, Target, Copy, ArrowUp, ArrowDown, ChevronUp, ArrowUpDown,
+  FileSpreadsheet, Moon, Sun, HelpCircle, Keyboard, GripVertical,
 } from "lucide-react";
 import ProfileGate from "./ProfileGate.jsx";
 import { saveProfileData } from "./profiles.js";
-import { exportJSON, exportPDF, importJSONFile } from "./export.js";
-import { fetchCryptoPrices } from "./cryptoPrices.js";
+import { exportJSON, exportPDF, exportCSV, importJSONFile } from "./export.js";
+import { fetchCryptoPrices, fetchCryptoHistory } from "./cryptoPrices.js";
 import { fetchUsdToEurRate } from "./fx.js";
 
 // ---------- Design tokens ----------
 const COLORS = {
-  bg: "#F4F5F1",
-  card: "#FFFFFF",
+  bg: "var(--pea-bg, #F4F5F1)",
+  card: "var(--pea-card, #FFFFFF)",
+  cardAlt: "var(--pea-card-alt, #FCFCFA)",
   navy: "#10233B",
   navyLight: "#1B3A5C",
   gold: "#B8873A",
   goldLight: "#E8D5B0",
   green: "#2F7D5E",
   red: "#B5484D",
-  border: "#E3E1D8",
-  text: "#1C2530",
-  muted: "#6B7280",
+  border: "var(--pea-border, #E3E1D8)",
+  text: "var(--pea-text, #1C2530)",
+  muted: "var(--pea-muted, #6B7280)",
 };
 const PALETTE = ["#B8873A", "#2F6E7A", "#7A4E3A", "#5B7A4E", "#8A5B7A", "#4E6B7A", "#A3673A"];
 
@@ -235,6 +237,7 @@ function RowActions({ onDelete, deleteLabel }) {
       <button
         type="button"
         title="Ligne enregistrée"
+        className="pea-row-btn"
         onClick={() => {
           setFlash(true);
           setTimeout(() => setFlash(false), 1100);
@@ -251,6 +254,7 @@ function RowActions({ onDelete, deleteLabel }) {
       <button
         type="button"
         title="Supprimer"
+        className="pea-row-btn"
         onClick={() => {
           if (window.confirm(`Supprimer ${deleteLabel || "cette ligne"} ? Cette action est irréversible.`)) onDelete();
         }}
@@ -277,7 +281,7 @@ function SortableTh({ col, label, align, sortCol, sortDir, onSort }) {
 }
 function MiniStat({ label, value }) {
   return (
-    <div style={{ background: "#FCFCFA", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px" }}>
+    <div style={{ background: COLORS.cardAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px" }}>
       <div style={{ fontFamily: "Inter", fontSize: 11, letterSpacing: 0.4, textTransform: "uppercase", color: COLORS.muted }}>
         {label}
       </div>
@@ -290,7 +294,7 @@ function MiniStat({ label, value }) {
 
 const inputStyle = {
   fontFamily: "IBM Plex Mono", fontSize: 13.5, border: `1px solid ${COLORS.border}`,
-  borderRadius: 5, padding: "5px 7px", width: "100%", color: COLORS.text, background: "#FCFCFA",
+  borderRadius: 5, padding: "5px 7px", width: "100%", color: COLORS.text, background: COLORS.cardAlt,
 };
 const selectStyle = { ...inputStyle, fontFamily: "Inter" };
 const th = {
@@ -311,7 +315,56 @@ const miniIconBtnStyle = {
   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0,
 };
 
-function Dashboard({ profileName, profileKey, initialData, onLogout }) {
+function TutorialModal({ onClose }) {
+  const sections = [
+    { title: "Vue d'ensemble", text: "Ton patrimoine total tous comptes confondus, un résumé du jour, et un camembert cliquable pour rejoindre un compte." },
+    { title: "Opérations", text: "Tes achats et ventes. Remplis la quantité ou le prix, puis le montant total en € — l'autre se calcule tout seul. Trie les colonnes, clone ou réordonne les lignes." },
+    { title: "Versements", text: "Tes dépôts et retraits, avec un graphique mensuel et ta régularité de versement." },
+    { title: "Par ETF / Par actif", text: "Le détail d'un actif précis : quantité, PRU, et pour la crypto le prix en direct, le gain latent et tes paliers de vente." },
+    { title: "Calculateur", text: "Indique un montant à verser : il se répartit automatiquement entre tes actifs selon tes allocations cibles." },
+    { title: "Objectifs", text: "Définis un ou plusieurs objectifs d'épargne avec une barre de progression." },
+    { title: "Valorisation", text: "Le suivi manuel de la valeur totale du compte dans le temps, comparée à tes versements." },
+    { title: "Répartition", text: "Un camembert par compte, et la répartition globale de ton patrimoine." },
+  ];
+  return (
+    <div className="pea-modal-overlay" onClick={onClose}>
+      <div className="pea-modal" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontFamily: "Fraunces", fontSize: 20, fontWeight: 700, color: COLORS.navy }}>Guide rapide</div>
+          <button onClick={onClose} className="pea-modal-close"><X size={16} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 16 }}>
+          Un tour rapide de chaque onglet et des raccourcis disponibles. Rouvre ce guide à tout moment avec le bouton "Aide" ou la touche <strong>?</strong>.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+          {sections.map((s) => (
+            <div key={s.title}>
+              <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 13.5, color: COLORS.navy }}>{s.title}</div>
+              <div style={{ fontFamily: "Inter", fontSize: 12.5, color: COLORS.text }}>{s.text}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontFamily: "Fraunces", fontSize: 15, fontWeight: 600, color: COLORS.navy, marginBottom: 8 }}>
+          Raccourcis & astuces
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: COLORS.text, display: "flex", flexDirection: "column", gap: 4 }}>
+          <li><strong>N</strong> — nouvelle ligne (dans Opérations ou Versements)</li>
+          <li><strong>Ctrl+Z</strong> (ou Cmd+Z) — annuler la dernière modification</li>
+          <li><strong>?</strong> — rouvrir ce guide</li>
+          <li>Glisser une ligne vers la gauche sur mobile — révèle la suppression</li>
+          <li>Glisser-déposer une ligne (⠿) sur ordinateur — pour la réordonner</li>
+          <li>Bouton "Mode sombre" en haut — pour un affichage adapté au soir</li>
+          <li>Pense à faire un "Export JSON" régulièrement — tes données restent uniquement sur cet appareil</li>
+        </ul>
+        <button onClick={onClose} style={{ ...addBtnStyleBase, background: COLORS.navy, marginTop: 20, width: "100%", justifyContent: "center", padding: "10px" }}>
+          Compris, fermer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDark }) {
   useFontsLoaded();
   const [data, setData] = useState(() => normalizeData(initialData));
   const [tab, setTab] = useState("vue");
@@ -325,6 +378,9 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const [cryptoPrices, setCryptoPrices] = useState({});
   const [pricesLoading, setPricesLoading] = useState(false);
   const [pricesError, setPricesError] = useState("");
+  const [cryptoHistory, setCryptoHistory] = useState({});
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyDays, setHistoryDays] = useState(30);
   const [usdRate, setUsdRate] = useState(null);
   const [usdRateLoading, setUsdRateLoading] = useState(false);
   const [usdRateError, setUsdRateError] = useState("");
@@ -336,11 +392,68 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
   const [txSortDir, setTxSortDir] = useState("asc");
   const [selectedTxId, setSelectedTxId] = useState(null);
   const [selectedVersId, setSelectedVersId] = useState(null);
+  const [dragRowId, setDragRowId] = useState(null);
+  const dragIdRef = useRef(null);
+  const [swipeConfirm, setSwipeConfirm] = useState(null);
+  const touchStartXRef = useRef(null);
+  const touchDeltaRef = useRef(0);
+  const handleTxTouchStart = (e) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchDeltaRef.current = 0;
+  };
+  const handleTxTouchMove = (e) => {
+    if (touchStartXRef.current === null) return;
+    const dx = e.touches[0].clientX - touchStartXRef.current;
+    if (dx < 0) {
+      touchDeltaRef.current = Math.max(dx, -90);
+      e.currentTarget.style.transform = `translateX(${touchDeltaRef.current}px)`;
+    }
+  };
+  const handleTxTouchEnd = (e, t) => {
+    const rowEl = e.currentTarget;
+    const dx = touchDeltaRef.current;
+    rowEl.style.transition = "transform 0.2s ease";
+    rowEl.style.transform = "translateX(0)";
+    setTimeout(() => { if (rowEl) rowEl.style.transition = ""; }, 220);
+    if (dx < -55) {
+      setSwipeConfirm({ kind: "transaction", id: t.id, label: `${t.type === "vente" ? "Vente" : "Achat"} ${t.etf || ""} du ${fmtDate(t.date)}` });
+    }
+    touchStartXRef.current = null;
+    touchDeltaRef.current = 0;
+  };
+  const [showTutorial, setShowTutorial] = useState(() => {
+    try {
+      return localStorage.getItem("peaTracker.tutorialSeen") !== "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissTutorial = () => {
+    setShowTutorial(false);
+    try { localStorage.setItem("peaTracker.tutorialSeen", "1"); } catch {}
+  };
+  const [lastExportAt, setLastExportAt] = useState(() => {
+    try { return localStorage.getItem("peaTracker.lastExportAt"); } catch { return null; }
+  });
+  const markExported = () => {
+    const now = new Date().toISOString();
+    setLastExportAt(now);
+    try { localStorage.setItem("peaTracker.lastExportAt", now); } catch {}
+  };
+  const daysSinceExport = lastExportAt ? Math.floor((new Date() - new Date(lastExportAt)) / 86400000) : null;
+  const hasAnyData = data.accounts.some((a) => a.transactions.length > 0 || a.versements.length > 0);
   useScrollToRow(selectedTxId, "tx-row");
   useScrollToRow(selectedVersId, "vers-row");
 
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
+  const previousDataRef = useRef(null);
+  const [canUndo, setCanUndo] = useState(false);
+
   const persist = useCallback(
     async (next) => {
+      previousDataRef.current = dataRef.current;
+      setCanUndo(true);
       setData(next);
       setSaving(true);
       try {
@@ -353,6 +466,14 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     },
     [profileName, profileKey]
   );
+
+  const undoLastChange = useCallback(() => {
+    if (!previousDataRef.current) return;
+    const restore = previousDataRef.current;
+    previousDataRef.current = null;
+    setCanUndo(false);
+    persist(restore);
+  }, [persist]);
 
   const activeAccount = data.accounts.find((a) => a.id === data.activeAccountId) || data.accounts[0];
   const isCrypto = activeAccount.kind === "Crypto";
@@ -377,6 +498,20 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
       return {};
     } finally {
       setPricesLoading(false);
+    }
+  };
+
+  const loadCryptoHistory = async (symbol, days) => {
+    if (!symbol) return;
+    setHistoryLoading(true);
+    setPricesError("");
+    try {
+      const points = await fetchCryptoHistory(symbol, days);
+      setCryptoHistory((prev) => ({ ...prev, [symbol.toUpperCase()]: points || [] }));
+    } catch (e) {
+      setPricesError(e.message || "Impossible de récupérer l'historique.");
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -641,6 +776,16 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
     patchActiveAccount({ transactions: next });
   };
+  const reorderTransactionByDrop = (fromId, toId) => {
+    if (fromId === toId) return;
+    const arr = [...activeAccount.transactions];
+    const fromIdx = arr.findIndex((t) => t.id === fromId);
+    const toIdx = arr.findIndex((t) => t.id === toId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
+    patchActiveAccount({ transactions: arr });
+  };
   // Permet de ne renseigner que 2 des 3 valeurs (quantité / prix unitaire / montant total) :
   // la troisième se déduit automatiquement — pratique pour la crypto ("j'ai mis 100€ dedans").
   const handleMontantChange = (id, val) => {
@@ -779,6 +924,29 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
     }
   };
 
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = (e.target && e.target.tagName || "").toLowerCase();
+      const typing = tag === "input" || tag === "select" || tag === "textarea";
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undoLastChange();
+        return;
+      }
+      if (typing) return;
+      if (e.key === "?") {
+        setShowTutorial(true);
+        return;
+      }
+      if (e.key.toLowerCase() === "n") {
+        if (tab === "operations") addTransaction();
+        else if (tab === "versements") addVersement();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [data, tab, undoLastChange]);
+
   const TABS = [
     { id: "vue", label: "Vue d'ensemble", icon: LayoutDashboard },
     { id: "operations", label: "Opérations", icon: ListOrdered },
@@ -865,11 +1033,19 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
         )}
 
         <div className="pea-toolbar">
-          <button className="pea-toolbtn" onClick={() => exportJSON(profileName, data)}>
+          {canUndo && (
+            <button className="pea-toolbtn" onClick={undoLastChange} title="Annuler la dernière modification (Ctrl+Z)">
+              <ArrowUp size={13} style={{ transform: "rotate(-90deg)" }} /> Annuler
+            </button>
+          )}
+          <button className="pea-toolbtn" onClick={() => { exportJSON(profileName, data); markExported(); }}>
             <Download size={13} /> Export JSON (tout)
           </button>
-          <button className="pea-toolbtn" onClick={() => exportPDF(profileName, activeAccount.name, activeAccount)}>
+          <button className="pea-toolbtn" onClick={() => { exportPDF(profileName, activeAccount.name, activeAccount); markExported(); }}>
             <FileText size={13} /> Export PDF ({activeAccount.name})
+          </button>
+          <button className="pea-toolbtn" onClick={() => { exportCSV(profileName, activeAccount.name, activeAccount); markExported(); }}>
+            <FileSpreadsheet size={13} /> Export CSV ({activeAccount.name})
           </button>
           <label className="pea-toolbtn" style={{ cursor: "pointer" }}>
             <Upload size={13} /> Importer
@@ -877,6 +1053,12 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
           </label>
           <button className="pea-toolbtn" onClick={onLogout}>
             <LogOut size={13} /> Changer de profil
+          </button>
+          <button className="pea-toolbtn" onClick={() => setShowTutorial(true)} title="Aide et tutoriel">
+            <HelpCircle size={13} /> Aide
+          </button>
+          <button className="pea-toolbtn" onClick={() => setDark((d) => !d)} title={dark ? "Mode clair" : "Mode sombre"}>
+            {dark ? <Sun size={13} /> : <Moon size={13} />} {dark ? "Mode clair" : "Mode sombre"}
           </button>
         </div>
         {importError && <div style={{ color: "#E8A2A2", fontSize: 12, marginTop: 6 }}>{importError}</div>}
@@ -920,6 +1102,20 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                 )}
               </div>
             </SectionCard>
+
+            {hasAnyData && (daysSinceExport === null || daysSinceExport > 30) && (
+              <SectionCard style={{ padding: "12px 20px", background: "#FBF3E3", borderLeft: `4px solid ${COLORS.gold}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontFamily: "Inter", fontSize: 13 }}>
+                  <Download size={15} color={COLORS.gold} />
+                  <span>
+                    {daysSinceExport === null
+                      ? "Tu n'as encore jamais exporté tes données."
+                      : `Ton dernier export remonte à ${daysSinceExport} jours.`}{" "}
+                    Pense à faire une sauvegarde (bouton "Export JSON" en haut) — tes données ne sont stockées que sur cet appareil.
+                  </span>
+                </div>
+              </SectionCard>
+            )}
 
             <SectionCard>
               <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
@@ -1075,9 +1271,10 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
               )}
             </div>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <table className="pea-card-table" style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
+                    <th style={{ ...th, width: 20 }}></th>
                     <th style={th}>#</th>
                     <SortableTh col="date" label="Date" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
                     <SortableTh col="type" label="Type" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
@@ -1099,32 +1296,59 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                         key={t.id}
                         id={`tx-row-${t.id}`}
                         onClick={() => setSelectedTxId(t.id)}
+                        onTouchStart={handleTxTouchStart}
+                        onTouchMove={handleTxTouchMove}
+                        onTouchEnd={(e) => handleTxTouchEnd(e, t)}
+                        onDragOver={(e) => { if (!txSortCol) e.preventDefault(); }}
+                        onDrop={(e) => {
+                          if (txSortCol) return;
+                          e.preventDefault();
+                          const fromId = dragIdRef.current;
+                          if (fromId) reorderTransactionByDrop(fromId, t.id);
+                          dragIdRef.current = null;
+                          setDragRowId(null);
+                        }}
                         style={{
                           background: isSelected ? COLORS.goldLight : "transparent",
                           boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : "none",
+                          opacity: dragRowId === t.id ? 0.4 : 1,
                           transition: "background 0.2s",
                         }}
                       >
-                        <td style={{ ...td, color: COLORS.muted, fontFamily: "IBM Plex Mono", fontSize: 12 }}>{i + 1}</td>
-                        <td style={td}>
+                        <td
+                          style={{ ...td, textAlign: "center", cursor: txSortCol ? "default" : "grab", opacity: txSortCol ? 0.3 : 1 }}
+                          draggable={!txSortCol}
+                          onDragStart={(e) => {
+                            if (txSortCol) return;
+                            dragIdRef.current = t.id;
+                            setDragRowId(t.id);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragEnd={() => { dragIdRef.current = null; setDragRowId(null); }}
+                          title={txSortCol ? "Désactive le tri pour réordonner" : "Glisser pour réordonner"}
+                        >
+                          <GripVertical size={14} color={COLORS.muted} />
+                        </td>
+                        <td data-label="#" style={{ ...td, color: COLORS.muted, fontFamily: "IBM Plex Mono", fontSize: 12 }}>{i + 1}</td>
+                        <td data-label="Date" style={td}>
                           <input type="date" value={t.date} onChange={(e) => updateTransaction(t.id, "date", e.target.value)} style={inputStyle} />
                         </td>
-                        <td style={td}>
+                        <td data-label="Type" style={td}>
                           <select value={t.type || "achat"} onChange={(e) => updateTransaction(t.id, "type", e.target.value)} style={{ ...selectStyle, minWidth: 90 }}>
                             <option value="achat">Achat</option>
                             <option value="vente">Vente</option>
                           </select>
                         </td>
-                        <td style={td}>
+                        <td data-label="Actif" style={td}>
                           <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
                         </td>
-                        <td style={td}>
+                        <td data-label="Code / ISIN" style={td}>
                           <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
                         </td>
-                        <td style={{ ...td, textAlign: "right" }}>
+                        <td data-label="Quantité" style={{ ...td, textAlign: "right" }}>
                           <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right", minWidth: 90 }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
                         </td>
-                        <td style={{ ...td, textAlign: "right" }}>
+                        <td data-label="Prix unitaire" style={{ ...td, textAlign: "right" }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                               {ccy === "EUR" ? (
@@ -1162,7 +1386,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                             )}
                           </div>
                         </td>
-                        <td style={{ ...td, textAlign: "right" }}>
+                        <td data-label="Montant" style={{ ...td, textAlign: "right" }}>
                           <input
                             type="number" step="0.01"
                             value={montantVal ? montantVal : ""}
@@ -1195,6 +1419,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                     );
                   })}
                   <tr>
+                    <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}`, fontWeight: 700 }}>Total net</td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
@@ -1354,7 +1579,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                   style={{
                     padding: "7px 14px", borderRadius: 20,
                     border: `1px solid ${selectedEtf === etf ? COLORS.navy : COLORS.border}`,
-                    background: selectedEtf === etf ? COLORS.navy : "#FCFCFA",
+                    background: selectedEtf === etf ? COLORS.navy : COLORS.cardAlt,
                     color: selectedEtf === etf ? "#fff" : COLORS.text,
                     fontFamily: "Inter", fontSize: 13, fontWeight: 600, cursor: "pointer",
                   }}
@@ -1393,13 +1618,54 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                     )}
                   </div>
                   {pricesError && <div style={{ color: COLORS.red, fontSize: 12, marginBottom: 10 }}>{pricesError}</div>}
+
+                  {isCrypto && (
+                    <div style={{ marginBottom: 18 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                        <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 11.5, color: COLORS.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                          Historique
+                        </div>
+                        {[7, 30, 90].map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => { setHistoryDays(d); loadCryptoHistory(etf, d); }}
+                            style={{
+                              border: "none", borderRadius: 5, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                              background: historyDays === d && cryptoHistory[liveKey] ? COLORS.navy : COLORS.cardAlt,
+                              color: historyDays === d && cryptoHistory[liveKey] ? "#fff" : COLORS.muted,
+                            }}
+                          >
+                            {d} j
+                          </button>
+                        ))}
+                        {historyLoading && <span style={{ fontSize: 11, color: COLORS.muted }}>chargement…</span>}
+                      </div>
+                      {cryptoHistory[liveKey] && cryptoHistory[liveKey].length > 1 ? (
+                        <ResponsiveContainer width="100%" height={90}>
+                          <LineChart data={cryptoHistory[liveKey]}>
+                            <XAxis dataKey="t" hide />
+                            <YAxis domain={["auto", "auto"]} hide />
+                            <Line type="monotone" dataKey="price" stroke={accent} strokeWidth={2} dot={false} />
+                            <Tooltip
+                              formatter={(v) => fmtMoney(v, 2, 4)}
+                              labelFormatter={(t) => new Date(t).toLocaleDateString("fr-FR")}
+                              contentStyle={{ fontFamily: "Inter", fontSize: 11.5, borderRadius: 8 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div style={{ fontSize: 12, color: COLORS.muted }}>Choisis une période ci-dessus pour charger le graphique.</div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ display: "flex", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
                     <MiniStat label="Quantité nette" value={fmtQty(qty, isCrypto)} />
                     <MiniStat label="Coût moyen pondéré" value={fmtMoney(coutMoyen, 2, 4)} />
                     <MiniStat label="Montant net investi" value={fmtMoney(montant)} />
                     {currentValue !== null && <MiniStat label="Valeur actuelle" value={fmtMoney(currentValue)} />}
                     {gain !== null && (
-                      <div style={{ background: "#FCFCFA", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px" }}>
+                      <div style={{ background: COLORS.cardAlt, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 16px" }}>
                         <div style={{ fontFamily: "Inter", fontSize: 11, letterSpacing: 0.4, textTransform: "uppercase", color: COLORS.muted }}>Gain latent</div>
                         <div style={{ fontFamily: "IBM Plex Mono", fontSize: 17, fontWeight: 600, color: gain >= 0 ? COLORS.green : COLORS.red, marginTop: 2 }}>
                           {gain >= 0 ? "+" : ""}{fmtMoney(gain)} ({fmtPct(pctReturn(gain, montant))})
@@ -1664,7 +1930,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
                 Aucun objectif pour l'instant — clique sur "+ Objectif" pour en créer un.
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="pea-goals-grid">
                 {objectifs.map((o) => {
                   const currentValue = overview.rows.find((r) => r.id === activeAccount.id)?.value || 0;
                   const target = Number(o.targetAmount) || 0;
@@ -1881,19 +2147,62 @@ function Dashboard({ profileName, profileKey, initialData, onLogout }) {
           </>
         )}
       </div>
+      {showTutorial && <TutorialModal onClose={dismissTutorial} />}
+      {swipeConfirm && (
+        <div className="pea-swipe-confirm">
+          <span>Supprimer « {swipeConfirm.label} » ?</span>
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            <button
+              className="pea-swipe-btn pea-swipe-btn-cancel"
+              onClick={() => setSwipeConfirm(null)}
+            >
+              Annuler
+            </button>
+            <button
+              className="pea-swipe-btn pea-swipe-btn-danger"
+              onClick={() => {
+                if (swipeConfirm.kind === "transaction") deleteTransaction(swipeConfirm.id);
+                setSwipeConfirm(null);
+              }}
+            >
+              Supprimer
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
+function useDarkMode() {
+  const [dark, setDark] = useState(() => {
+    try {
+      return localStorage.getItem("peaTracker.darkMode") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    try {
+      localStorage.setItem("peaTracker.darkMode", dark ? "1" : "0");
+    } catch {}
+  }, [dark]);
+  return [dark, setDark];
+}
+
 export default function App() {
   const [profile, setProfile] = useState(null);
-  if (!profile) return <ProfileGate onEnter={(p) => setProfile(p)} />;
+  const [dark, setDark] = useDarkMode();
+  if (!profile) return <ProfileGate onEnter={(p) => setProfile(p)} dark={dark} setDark={setDark} />;
   return (
     <Dashboard
       profileName={profile.name}
       profileKey={profile.key}
       initialData={profile.data}
       onLogout={() => setProfile(null)}
+      dark={dark}
+      setDark={setDark}
     />
   );
 }
