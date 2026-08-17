@@ -12,7 +12,12 @@ Application multi-comptes (PEA, Compte-titres, Crypto, Autre) de suivi de portef
 - **Saisie en €, en $, ou en ne renseignant que 2 valeurs sur 3** : bascule €/$ (conversion automatique via l'API BCE) sur le prix d'achat et les versements ; pour une transaction, remplis la quantité *ou* le prix, puis le montant total — l'autre se calcule tout seul.
 - **Lignes triables, clonables et réordonnables** : clique un en-tête de colonne pour trier (ex. regrouper tous les BTC ensemble), duplique une ligne en un clic, ou réordonne-les manuellement avec les flèches ▲▼.
 - **Prix crypto en direct** : bouton "Actualiser les prix" qui va chercher les cours actuels via l'API publique CoinGecko (aucune clé requise), plus un mini-graphique d'historique (7/30/90 jours) par actif.
-- **Ergonomie mobile/tablette/PC** : vue "carte" sur mobile pour les opérations, glisser pour supprimer une ligne (mobile), glisser-déposer pour réordonner (PC), disposition 2 colonnes sur tablette, boutons agrandis au toucher, mode sombre.
+- **Ergonomie mobile/tablette/PC** : vue "carte" sur mobile pour les opérations, glisser pour supprimer une ligne (mobile), glisser-déposer pour réordonner (PC), disposition 2 colonnes sur tablette, boutons agrandis au toucher, mode sombre, focus clavier visible, en-tête de tableau collant au défilement.
+- **Import CSV** avec mapping de colonnes (bouton dans l'onglet Opérations) : accepte un export de courtier quelconque (virgule ou point-virgule, formats de date JJ/MM/AAAA, MM/JJ/AAAA ou AAAA-MM-JJ, virgule ou point décimal), avec aperçu avant import.
+- **Sous-menu "Analyse"** regroupant Calculateur / Objectifs / Valorisation / Répartition pour désencombrer la barre principale.
+- **Actions groupées** dans Opérations : sélection multiple (cases à cocher), suppression ou duplication en lot.
+- **Recherche** par actif/code/type, et colonne Code/ISIN masquable pour réduire la densité d'une ligne.
+- **Cohérence devise €/$** : la bascule est maintenant disponible partout où un prix se saisit (Opérations, Versements, Calculateur).
 - **Raccourcis clavier** : `N` (nouvelle ligne), `Ctrl+Z` (annuler la dernière modification), `?` (ouvrir le guide). Un tutoriel intégré explique chaque onglet et ces raccourcis (bouton "Aide").
 - **Export CSV** en plus du PDF/JSON, et un bandeau de rappel si tu n'as pas exporté depuis longtemps.
 - **Paliers de vente crypto** : définis plusieurs paliers de prise de bénéfice par actif (ex. vendre 25 % quand le prix a pris +30 % par rapport à ton prix de revient moyen), avec barre de progression vers chaque palier.

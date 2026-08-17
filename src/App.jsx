@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -364,6 +365,261 @@ function TutorialModal({ onClose }) {
   );
 }
 
+function parseCsvText(text) {
+  const firstLine = (text.split(/\r?\n/)[0] || "");
+  const delimiter = (firstLine.match(/;/g) || []).length >= (firstLine.match(/,/g) || []).length ? ";" : ",";
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  const rows = lines.map((line) => {
+    const cells = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; }
+          else inQuotes = false;
+        } else cur += c;
+      } else if (c === '"') {
+        inQuotes = true;
+      } else if (c === delimiter) {
+        cells.push(cur);
+        cur = "";
+      } else {
+        cur += c;
+      }
+    }
+    cells.push(cur);
+    return cells.map((c) => c.trim());
+  });
+  return { delimiter, rows };
+}
+function parseDateToIso(raw, format) {
+  const s = (raw || "").trim();
+  if (!s) return "";
+  if (format === "iso") {
+    const m = s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  } else if (format === "dmy") {
+    const m = s.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  } else if (format === "mdy") {
+    const m = s.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  }
+  return "";
+}
+function parseCsvNum(raw, decimalSep) {
+  if (raw === undefined || raw === null || raw === "") return "";
+  let s = String(raw).trim().replace(/\s/g, "").replace(/€|\$/g, "");
+  if (decimalSep === ",") s = s.replace(/\./g, "").replace(",", ".");
+  else s = s.replace(/,/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : "";
+}
+function parseCsvType(raw) {
+  const s = (raw || "").toLowerCase();
+  if (s.includes("vente") || s.includes("sell") || s.includes("sale")) return "vente";
+  return "achat";
+}
+
+const CSV_FIELDS = [
+  { id: "ignore", label: "Ignorer" },
+  { id: "date", label: "Date" },
+  { id: "type", label: "Type (achat/vente)" },
+  { id: "etf", label: "Actif" },
+  { id: "isin", label: "Code / ISIN" },
+  { id: "quantity", label: "Quantité" },
+  { id: "cost", label: "Prix unitaire" },
+];
+function guessField(headerLabel) {
+  const s = (headerLabel || "").toLowerCase();
+  if (/date/.test(s)) return "date";
+  if (/type/.test(s)) return "type";
+  if (/actif|etf|nom|titre|libell/.test(s)) return "etf";
+  if (/isin|code/.test(s)) return "isin";
+  if (/quantit|qty|nombre/.test(s)) return "quantity";
+  if (/prix|cours|cout|coût/.test(s)) return "cost";
+  return "ignore";
+}
+
+function ImportCsvModal({ onClose, onImport }) {
+  const [fileName, setFileName] = useState("");
+  const [rows, setRows] = useState(null);
+  const [hasHeader, setHasHeader] = useState(true);
+  const [dateFormat, setDateFormat] = useState("dmy");
+  const [decimalSep, setDecimalSep] = useState("comma");
+  const [mapping, setMapping] = useState({});
+  const [error, setError] = useState("");
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { rows: parsed } = parseCsvText(String(reader.result));
+        if (parsed.length === 0) throw new Error("Fichier vide.");
+        setRows(parsed);
+        const headerRow = parsed[0];
+        const guessed = {};
+        headerRow.forEach((h, i) => { guessed[i] = guessField(h); });
+        setMapping(guessed);
+      } catch (err) {
+        setError(err.message || "Impossible de lire ce fichier.");
+      }
+    };
+    reader.onerror = () => setError("Impossible de lire ce fichier.");
+    reader.readAsText(file, "utf-8");
+  };
+
+  const dataRows = rows ? (hasHeader ? rows.slice(1) : rows) : [];
+  const colCount = rows ? rows[0].length : 0;
+
+  const transformed = useMemo(() => {
+    if (!rows) return [];
+    const idxOf = (field) => Object.keys(mapping).find((k) => mapping[k] === field);
+    const dateIdx = idxOf("date");
+    const typeIdx = idxOf("type");
+    const etfIdx = idxOf("etf");
+    const isinIdx = idxOf("isin");
+    const qtyIdx = idxOf("quantity");
+    const costIdx = idxOf("cost");
+    return dataRows.map((row) => ({
+      id: uid(),
+      date: dateIdx !== undefined ? parseDateToIso(row[dateIdx], dateFormat) : "",
+      type: typeIdx !== undefined ? parseCsvType(row[typeIdx]) : "achat",
+      etf: etfIdx !== undefined ? row[etfIdx] : "",
+      isin: isinIdx !== undefined ? (row[isinIdx] || "").toUpperCase() : "",
+      quantity: qtyIdx !== undefined ? parseCsvNum(row[qtyIdx], decimalSep === "comma" ? "," : ".") : "",
+      cost: costIdx !== undefined ? parseCsvNum(row[costIdx], decimalSep === "comma" ? "," : ".") : "",
+    }));
+  }, [rows, dataRows, mapping, dateFormat, decimalSep]);
+
+  const validCount = transformed.filter((t) => t.date && t.etf).length;
+
+  return (
+    <div className="pea-modal-overlay" onClick={onClose}>
+      <div className="pea-modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontFamily: "Fraunces", fontSize: 20, fontWeight: 700, color: COLORS.text }}>Importer un CSV</div>
+          <button onClick={onClose} className="pea-modal-close"><X size={16} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 16 }}>
+          Un export de courtier (Excel/CSV), semicolons ou virgules, marche généralement tel quel. Associe chaque colonne au bon champ ci-dessous.
+        </div>
+
+        {!rows && (
+          <div>
+            <label
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                border: `2px dashed ${COLORS.border}`, borderRadius: 10, padding: 30, cursor: "pointer",
+              }}
+            >
+              <Upload size={22} color={COLORS.muted} />
+              <span style={{ fontSize: 13, color: COLORS.muted }}>Clique pour choisir un fichier .csv</span>
+              <input type="file" accept=".csv,text/csv" onChange={handleFile} style={{ display: "none" }} />
+            </label>
+            {error && <div style={{ color: COLORS.red, fontSize: 12.5, marginTop: 10 }}>{error}</div>}
+          </div>
+        )}
+
+        {rows && (
+          <>
+            <div style={{ fontSize: 12.5, color: COLORS.muted, marginBottom: 10 }}>
+              Fichier : <strong>{fileName}</strong> — {dataRows.length} ligne(s) de données détectée(s)
+            </div>
+
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5 }}>
+                <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
+                La 1ère ligne est un en-tête
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5 }}>
+                Format de date :
+                <select value={dateFormat} onChange={(e) => setDateFormat(e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", width: "auto" }}>
+                  <option value="dmy">JJ/MM/AAAA</option>
+                  <option value="mdy">MM/JJ/AAAA</option>
+                  <option value="iso">AAAA-MM-JJ</option>
+                </select>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5 }}>
+                Séparateur décimal :
+                <select value={decimalSep} onChange={(e) => setDecimalSep(e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", width: "auto" }}>
+                  <option value="comma">Virgule (1,50)</option>
+                  <option value="point">Point (1.50)</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 12.5, color: COLORS.muted, textTransform: "uppercase", marginBottom: 6 }}>
+              Correspondance des colonnes
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16, maxHeight: 180, overflowY: "auto" }}>
+              {Array.from({ length: colCount }).map((_, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <select
+                    value={mapping[i] || "ignore"}
+                    onChange={(e) => setMapping((m) => ({ ...m, [i]: e.target.value }))}
+                    style={{ ...inputStyle, fontFamily: "Inter", width: 160 }}
+                  >
+                    {CSV_FIELDS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                  <span style={{ fontSize: 12, color: COLORS.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {hasHeader ? `« ${rows[0][i]} » — ` : ""}ex. {dataRows[0]?.[i] ?? ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 12.5, color: COLORS.muted, textTransform: "uppercase", marginBottom: 6 }}>
+              Aperçu ({validCount} / {transformed.length} lignes complètes)
+            </div>
+            <div style={{ overflowX: "auto", marginBottom: 16 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={th}>Date</th>
+                    <th style={th}>Type</th>
+                    <th style={th}>Actif</th>
+                    <th style={{ ...th, textAlign: "right" }}>Quantité</th>
+                    <th style={{ ...th, textAlign: "right" }}>Prix</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transformed.slice(0, 5).map((t) => (
+                    <tr key={t.id}>
+                      <td style={{ ...td, color: t.date ? COLORS.text : COLORS.red }}>{t.date || "—"}</td>
+                      <td style={td}>{t.type}</td>
+                      <td style={{ ...td, color: t.etf ? COLORS.text : COLORS.red }}>{t.etf || "—"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{t.quantity}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{t.cost}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setRows(null); setMapping({}); }} style={addBtnStyleOutline}>Changer de fichier</button>
+              <button
+                onClick={() => { onImport(transformed.filter((t) => t.date && t.etf)); onClose(); }}
+                style={{ ...addBtnStyleBase, background: COLORS.navy, flex: 1, justifyContent: "center" }}
+                disabled={validCount === 0}
+              >
+                Importer {validCount} ligne(s)
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDark }) {
   useFontsLoaded();
   const [data, setData] = useState(() => normalizeData(initialData));
@@ -388,12 +644,39 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
   const [costUsdDraftMap, setCostUsdDraftMap] = useState({});
   const [versCcyMap, setVersCcyMap] = useState({});
   const [versUsdDraftMap, setVersUsdDraftMap] = useState({});
+  const [targetCcyMap, setTargetCcyMap] = useState({});
+  const [targetUsdDraftMap, setTargetUsdDraftMap] = useState({});
   const [txSortCol, setTxSortCol] = useState(null);
   const [txSortDir, setTxSortDir] = useState("asc");
+  const [txSearch, setTxSearch] = useState("");
+  const [showIsinCol, setShowIsinCol] = useState(true);
+  const [selectedTxIds, setSelectedTxIds] = useState(() => new Set());
+  const [showImportCsv, setShowImportCsv] = useState(false);
   const [selectedTxId, setSelectedTxId] = useState(null);
   const [selectedVersId, setSelectedVersId] = useState(null);
   const [dragRowId, setDragRowId] = useState(null);
   const dragIdRef = useRef(null);
+  const [showAnalyseMenu, setShowAnalyseMenu] = useState(false);
+  const analyseMenuRef = useRef(null);
+  const analyseBtnRef = useRef(null);
+  const [analyseMenuPos, setAnalyseMenuPos] = useState({ top: 0, left: 0 });
+  const toggleAnalyseMenu = () => {
+    if (!showAnalyseMenu && analyseBtnRef.current) {
+      const rect = analyseBtnRef.current.getBoundingClientRect();
+      setAnalyseMenuPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setShowAnalyseMenu((s) => !s);
+  };
+  useEffect(() => {
+    if (!showAnalyseMenu) return;
+    const onClickOutside = (e) => {
+      if (analyseMenuRef.current && analyseMenuRef.current.contains(e.target)) return;
+      if (analyseBtnRef.current && analyseBtnRef.current.contains(e.target)) return;
+      setShowAnalyseMenu(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showAnalyseMenu]);
   const [swipeConfirm, setSwipeConfirm] = useState(null);
   const touchStartXRef = useRef(null);
   const touchDeltaRef = useRef(0);
@@ -674,9 +957,18 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
 
   const displayedTransactions = useMemo(() => {
     const withIdx = activeAccount.transactions.map((t, i) => ({ ...t, _idx: i }));
-    if (!txSortCol) return withIdx;
+    let arr = withIdx;
+    const q = txSearch.trim().toLowerCase();
+    if (q) {
+      arr = arr.filter((t) =>
+        (t.etf || "").toLowerCase().includes(q) ||
+        (t.isin || "").toLowerCase().includes(q) ||
+        (t.type === "vente" ? "vente" : "achat").includes(q)
+      );
+    }
+    if (!txSortCol) return arr;
     const dir = txSortDir === "asc" ? 1 : -1;
-    const arr = [...withIdx];
+    arr = [...arr];
     arr.sort((a, b) => {
       let av, bv;
       if (txSortCol === "montant") {
@@ -694,7 +986,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
       return 0;
     });
     return arr;
-  }, [activeAccount.transactions, txSortCol, txSortDir]);
+  }, [activeAccount.transactions, txSortCol, txSortDir, txSearch]);
 
   const toggleTxSort = (col) => {
     if (txSortCol === col) {
@@ -704,6 +996,34 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
       setTxSortCol(col);
       setTxSortDir("asc");
     }
+  };
+
+  // ---------- Sélection multiple (actions groupées) ----------
+  const toggleTxSelected = (id) => {
+    setSelectedTxIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAllTx = () => {
+    setSelectedTxIds((prev) =>
+      prev.size === displayedTransactions.length ? new Set() : new Set(displayedTransactions.map((t) => t.id))
+    );
+  };
+  const bulkDeleteTx = () => {
+    if (selectedTxIds.size === 0) return;
+    if (!window.confirm(`Supprimer les ${selectedTxIds.size} lignes sélectionnées ? Cette action est irréversible.`)) return;
+    patchActiveAccount({ transactions: activeAccount.transactions.filter((t) => !selectedTxIds.has(t.id)) });
+    setSelectedTxIds(new Set());
+  };
+  const bulkCloneTx = () => {
+    if (selectedTxIds.size === 0) return;
+    const toClone = activeAccount.transactions.filter((t) => selectedTxIds.has(t.id));
+    const clones = toClone.map((t) => ({ ...t, id: uid() }));
+    patchActiveAccount({ transactions: [...activeAccount.transactions, ...clones] });
+    setSelectedTxIds(new Set());
   };
 
   const sortedVersements = [...activeAccount.versements].sort((a, b) => a.date.localeCompare(b.date));
@@ -947,16 +1267,19 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
     return () => window.removeEventListener("keydown", handler);
   }, [data, tab, undoLastChange]);
 
-  const TABS = [
+  const PRIMARY_TABS = [
     { id: "vue", label: "Vue d'ensemble", icon: LayoutDashboard },
     { id: "operations", label: "Opérations", icon: ListOrdered },
     { id: "versements", label: "Versements", icon: Wallet2 },
     { id: "parEtf", label: isCrypto ? "Par actif" : "Par ETF", icon: Layers },
+  ];
+  const ANALYSE_TABS = [
     { id: "calculateur", label: "Calculateur", icon: Calculator },
     { id: "objectifs", label: "Objectifs", icon: Target },
     { id: "valorisation", label: "Valorisation", icon: TrendingUp },
     { id: "repartition", label: "Répartition", icon: PieIcon },
   ];
+  const isAnalyseTab = ANALYSE_TABS.some((t) => t.id === tab);
 
   const assetLabel = isCrypto ? "actif" : "ETF / titre";
 
@@ -1066,7 +1389,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
 
       {/* Tabs */}
       <div className="pea-tabs">
-        {TABS.map((t) => {
+        {PRIMARY_TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
           return (
@@ -1075,7 +1398,40 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
             </button>
           );
         })}
+        <div className="pea-analyse-wrap">
+          <button
+            ref={analyseBtnRef}
+            onClick={toggleAnalyseMenu}
+            className={isAnalyseTab ? "pea-tab active" : "pea-tab"}
+          >
+            <Layers size={15} /> {isAnalyseTab ? ANALYSE_TABS.find((t) => t.id === tab)?.label : "Analyse"}
+            <ChevronDown size={13} style={{ transform: showAnalyseMenu ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+          </button>
+        </div>
       </div>
+      {showAnalyseMenu &&
+        createPortal(
+          <div
+            ref={analyseMenuRef}
+            className="pea-analyse-menu"
+            style={{ position: "fixed", top: analyseMenuPos.top, left: analyseMenuPos.left }}
+          >
+            {ANALYSE_TABS.map((t) => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  className={active ? "pea-analyse-item active" : "pea-analyse-item"}
+                  onClick={() => { setTab(t.id); setShowAnalyseMenu(false); }}
+                >
+                  <Icon size={15} /> {t.label}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )}
 
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
         {tab === "vue" && (
@@ -1255,7 +1611,23 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
               <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600 }}>
                 Achats & ventes {isCrypto ? "de cryptos" : "de titres"}
               </div>
-              <button onClick={addTransaction} style={addBtnStyle}><Plus size={14} /> Ligne</button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => setShowImportCsv(true)} style={addBtnStyleOutline}><Upload size={14} /> Import CSV</button>
+                <button onClick={addTransaction} style={addBtnStyle}><Plus size={14} /> Ligne</button>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+              <input
+                type="text"
+                value={txSearch}
+                onChange={(e) => setTxSearch(e.target.value)}
+                placeholder="Rechercher un actif, un code, achat/vente…"
+                style={{ ...inputStyle, fontFamily: "Inter", maxWidth: 280 }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: COLORS.muted, cursor: "pointer" }}>
+                <input type="checkbox" checked={showIsinCol} onChange={(e) => setShowIsinCol(e.target.checked)} />
+                Afficher le code / ISIN
+              </label>
             </div>
             <div style={{ fontSize: 12, color: COLORS.muted, marginBottom: 10 }}>
               Astuce : pour une ligne, remplis la quantité <em>ou</em> le prix unitaire, puis le montant total en € —
@@ -1270,16 +1642,32 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                 </button>
               )}
             </div>
+            {selectedTxIds.size > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: COLORS.goldLight, borderRadius: 8, padding: "8px 12px", marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.navy }}>{selectedTxIds.size} ligne(s) sélectionnée(s)</span>
+                <button onClick={bulkCloneTx} style={{ ...addBtnStyleOutline, padding: "5px 10px", fontSize: 11.5 }}><Copy size={12} /> Dupliquer</button>
+                <button onClick={bulkDeleteTx} style={{ ...addBtnStyleOutline, padding: "5px 10px", fontSize: 11.5, color: COLORS.red, borderColor: COLORS.red }}><Trash2 size={12} /> Supprimer</button>
+                <button onClick={() => setSelectedTxIds(new Set())} style={{ border: "none", background: "none", color: COLORS.muted, fontSize: 11.5, cursor: "pointer", marginLeft: "auto" }}>Annuler la sélection</button>
+              </div>
+            )}
             <div style={{ overflowX: "auto" }}>
               <table className="pea-card-table" style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
+                <thead className="pea-sticky-thead">
                   <tr>
                     <th style={{ ...th, width: 20 }}></th>
+                    <th style={{ ...th, width: 24 }}>
+                      <input
+                        type="checkbox"
+                        checked={displayedTransactions.length > 0 && selectedTxIds.size === displayedTransactions.length}
+                        onChange={toggleSelectAllTx}
+                        title="Tout sélectionner"
+                      />
+                    </th>
                     <th style={th}>#</th>
                     <SortableTh col="date" label="Date" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
                     <SortableTh col="type" label="Type" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
                     <SortableTh col="etf" label={isCrypto ? "Actif" : "ETF / titre"} sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
-                    <SortableTh col="isin" label="Code / ISIN" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
+                    {showIsinCol && <SortableTh col="isin" label="Code / ISIN" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />}
                     <SortableTh col="quantity" label="Quantité" align="right" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
                     <SortableTh col="cost" label="Prix unitaire" align="right" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
                     <SortableTh col="montant" label="Montant" align="right" sortCol={txSortCol} sortDir={txSortDir} onSort={toggleTxSort} />
@@ -1329,6 +1717,9 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         >
                           <GripVertical size={14} color={COLORS.muted} />
                         </td>
+                        <td data-label="Sélection" style={td} onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedTxIds.has(t.id)} onChange={() => toggleTxSelected(t.id)} />
+                        </td>
                         <td data-label="#" style={{ ...td, color: COLORS.muted, fontFamily: "IBM Plex Mono", fontSize: 12 }}>{i + 1}</td>
                         <td data-label="Date" style={td}>
                           <input type="date" value={t.date} onChange={(e) => updateTransaction(t.id, "date", e.target.value)} style={inputStyle} />
@@ -1342,9 +1733,11 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         <td data-label="Actif" style={td}>
                           <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
                         </td>
-                        <td data-label="Code / ISIN" style={td}>
-                          <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
-                        </td>
+                        {showIsinCol && (
+                          <td data-label="Code / ISIN" style={td}>
+                            <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
+                          </td>
+                        )}
                         <td data-label="Quantité" style={{ ...td, textAlign: "right" }}>
                           <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right", minWidth: 90 }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
                         </td>
@@ -1421,10 +1814,11 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                   <tr>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                    <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}`, fontWeight: 700 }}>Total net</td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
-                    <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>
+                    {showIsinCol && <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}` }}></td>}
                     <td style={{ ...td, borderBottom: "none", borderTop: `2px solid ${COLORS.navy}`, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 700 }}>
                       {fmtQty(totalQty, isCrypto)}
                     </td>
@@ -1840,7 +2234,38 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           <input type="number" step="0.1" value={t.targetPct} onChange={(e) => updateTarget(t.id, "targetPct", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 40" />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.0001" value={t.price} onChange={(e) => updateTarget(t.id, "price", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 45.20" />
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              {(targetCcyMap[t.id] || "EUR") === "EUR" ? (
+                                <input type="number" step="0.0001" value={t.price} onChange={(e) => updateTarget(t.id, "price", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 92 }} placeholder="Ex. 45.20" />
+                              ) : (
+                                <input
+                                  type="number" step="0.0001"
+                                  value={targetUsdDraftMap[t.id] ?? ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setTargetUsdDraftMap((prev) => ({ ...prev, [t.id]: v }));
+                                    if (usdRate && v !== "") updateTarget(t.id, "price", Number(v) * usdRate);
+                                  }}
+                                  style={{ ...inputStyle, textAlign: "right", width: 92 }}
+                                  placeholder="Ex. 49.00"
+                                />
+                              )}
+                              <div style={{ display: "flex", border: `1px solid ${COLORS.border}`, borderRadius: 5, overflow: "hidden", flexShrink: 0 }}>
+                                <button type="button" onClick={() => setTargetCcyMap((p) => ({ ...p, [t.id]: "EUR" }))} style={{ border: "none", padding: "4px 6px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: (targetCcyMap[t.id] || "EUR") === "EUR" ? COLORS.navy : "#fff", color: (targetCcyMap[t.id] || "EUR") === "EUR" ? "#fff" : COLORS.muted }}>€</button>
+                                <button type="button" onClick={async () => { setTargetCcyMap((p) => ({ ...p, [t.id]: "USD" })); await ensureUsdRate(); }} style={{ border: "none", padding: "4px 6px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: targetCcyMap[t.id] === "USD" ? COLORS.navy : "#fff", color: targetCcyMap[t.id] === "USD" ? "#fff" : COLORS.muted }}>$</button>
+                              </div>
+                            </div>
+                            {targetCcyMap[t.id] === "USD" && (
+                              <div style={{ fontSize: 10.5, color: COLORS.muted }}>
+                                {usdRateLoading ? "Taux…" : usdRate ? `≈ ${fmtMoney(Number(t.price) || 0, 2, 4)}` : (
+                                  <span style={{ color: COLORS.red }}>
+                                    {usdRateError || "Taux indisponible"} <button type="button" onClick={ensureUsdRate} style={{ border: "none", background: "none", color: COLORS.text, textDecoration: "underline", cursor: "pointer", fontSize: 10.5, padding: 0 }}>réessayer</button>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
                           <RowActions onDelete={() => deleteTarget(t.id)} deleteLabel="cette ligne" />
@@ -2148,6 +2573,14 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
         )}
       </div>
       {showTutorial && <TutorialModal onClose={dismissTutorial} />}
+      {showImportCsv && (
+        <ImportCsvModal
+          onClose={() => setShowImportCsv(false)}
+          onImport={(newTx) => {
+            patchActiveAccount({ transactions: [...activeAccount.transactions, ...newTx] });
+          }}
+        />
+      )}
       {swipeConfirm && (
         <div className="pea-swipe-confirm">
           <span>Supprimer « {swipeConfirm.label} » ?</span>

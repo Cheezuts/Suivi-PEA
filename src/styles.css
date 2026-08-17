@@ -1,3 +1,20 @@
+/* ---------- Accessibilité clavier ---------- */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent, #B8873A);
+  outline-offset: 2px;
+}
+
+/* ---------- En-tête de tableau collant (desktop/tablette) ---------- */
+.pea-sticky-thead th {
+  position: sticky;
+  top: 0;
+  background: var(--pea-card, #FFFFFF);
+  z-index: 5;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -245,9 +262,46 @@ html.dark input, html.dark select {
   flex-shrink: 0;
 }
 .pea-tab.active {
-  background: #FFFFFF;
+  background: var(--pea-card, #FFFFFF);
   color: #10233B;
   border-bottom: 2px solid var(--accent, #B8873A);
+}
+.pea-analyse-wrap {
+  position: relative;
+}
+.pea-analyse-menu {
+  background: var(--pea-card, #FFFFFF);
+  border: 1px solid var(--pea-border, #E3E1D8);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 1200;
+  min-width: 180px;
+}
+.pea-analyse-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--pea-text, #1C2530);
+  font-family: "Inter";
+  font-weight: 600;
+  font-size: 13px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.pea-analyse-item:hover {
+  background: var(--pea-card-alt, #FCFCFA);
+}
+.pea-analyse-item.active {
+  background: var(--accent, #B8873A);
+  color: #fff;
 }
 
 /* ---------- Répartition (camembert) ---------- */
