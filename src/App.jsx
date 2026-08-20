@@ -250,26 +250,22 @@ function StatChip({ label, value, accent }) {
     </div>
   );
 }
-function RowActions({ onDelete, deleteLabel }) {
-  const [flash, setFlash] = useState(false);
+function RowActions({ onDelete, deleteLabel, confirmed, onToggleConfirm }) {
   return (
     <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
       <button
         type="button"
-        title="Ligne enregistrée"
+        title={confirmed ? "Ligne vérifiée — cliquer pour annuler" : "Marquer cette ligne comme vérifiée"}
         className="pea-row-btn"
-        onClick={() => {
-          setFlash(true);
-          setTimeout(() => setFlash(false), 1100);
-        }}
+        onClick={onToggleConfirm}
         style={{
-          background: flash ? COLORS.green : "#EAF3EE",
+          background: confirmed ? COLORS.green : "#EAF3EE",
           border: "none", borderRadius: 6, width: 28, height: 28,
           display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
           transition: "background 0.15s",
         }}
       >
-        <Check size={14} color={flash ? "#fff" : COLORS.green} />
+        <Check size={14} color={confirmed ? "#fff" : COLORS.green} />
       </button>
       <button
         type="button"
@@ -838,6 +834,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
     persist({
       ...data,
       accounts: data.accounts.map((a) => (a.id === activeAccount.id ? { ...a, ...patch } : a)),
+    });
+  };
+  // Bascule le champ "confirmed" d'une ligne dans n'importe quelle liste du compte actif
+  // (transactions, versements, valorisations, allocationTargets, objectifs, sellTargets…)
+  const toggleConfirmed = (listKey, id) => {
+    patchActiveAccount({
+      [listKey]: (activeAccount[listKey] || []).map((x) => (x.id === id ? { ...x, confirmed: !x.confirmed } : x)),
     });
   };
   const switchAccount = (id) => persist({ ...data, activeAccountId: id });
@@ -1746,8 +1749,8 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           setDragRowId(null);
                         }}
                         style={{
-                          background: isSelected ? COLORS.goldLight : "transparent",
-                          boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : `inset 2px 0 0 0 ${colorForLabel(t.etf)}55`,
+                          background: isSelected ? COLORS.goldLight : `${colorForLabel(t.etf)}20`,
+                          boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : "none",
                           opacity: dragRowId === t.id ? 0.4 : 1,
                           transition: "background 0.2s",
                         }}
@@ -1860,7 +1863,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                             <button type="button" title="Dupliquer cette ligne" onClick={() => cloneTransaction(t.id)} style={miniIconBtnStyle}>
                               <Copy size={13} color={COLORS.navy} />
                             </button>
-                            <RowActions onDelete={() => deleteTransaction(t.id)} deleteLabel="cette opération" />
+                            <RowActions onDelete={() => deleteTransaction(t.id)} deleteLabel="cette opération" confirmed={t.confirmed} onToggleConfirm={() => toggleConfirmed("transactions", t.id)} />
                           </div>
                         </td>
                       </tr>
@@ -2022,7 +2025,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </div>
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
-                          <RowActions onDelete={() => deleteVersement(v.id)} deleteLabel="ce versement" />
+                          <RowActions onDelete={() => deleteVersement(v.id)} deleteLabel="ce versement" confirmed={v.confirmed} onToggleConfirm={() => toggleConfirmed("versements", v.id)} />
                         </td>
                       </tr>
                     ))}
@@ -2241,7 +2244,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                                     )}
                                   </td>
                                   <td style={{ ...td, textAlign: "center" }}>
-                                    <RowActions onDelete={() => deleteSellTarget(s.id)} deleteLabel="ce palier" />
+                                    <RowActions onDelete={() => deleteSellTarget(s.id)} deleteLabel="ce palier" confirmed={s.confirmed} onToggleConfirm={() => toggleConfirmed("sellTargets", s.id)} />
                                   </td>
                                 </tr>
                               );
@@ -2349,7 +2352,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </div>
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
-                          <RowActions onDelete={() => deleteTarget(t.id)} deleteLabel="cette ligne" />
+                          <RowActions onDelete={() => deleteTarget(t.id)} deleteLabel="cette ligne" confirmed={t.confirmed} onToggleConfirm={() => toggleConfirmed("allocationTargets", t.id)} />
                         </td>
                       </tr>
                     ))}
@@ -2456,7 +2459,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.4 }}>Échéance (optionnel)</div>
                           <input type="date" value={o.targetDate || ""} onChange={(e) => updateObjectif(o.id, "targetDate", e.target.value)} style={inputStyle} />
                         </div>
-                        <RowActions onDelete={() => deleteObjectif(o.id)} deleteLabel="cet objectif" />
+                        <RowActions onDelete={() => deleteObjectif(o.id)} deleteLabel="cet objectif" confirmed={o.confirmed} onToggleConfirm={() => toggleConfirmed("objectifs", o.id)} />
                       </div>
                       {target > 0 && (
                         <>
@@ -2516,7 +2519,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           {fmtPct(pctReturn(r.diff, r.cumule))}
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
-                          <RowActions onDelete={() => deleteValorisation(r.id)} deleteLabel="cette entrée" />
+                          <RowActions onDelete={() => deleteValorisation(r.id)} deleteLabel="cette entrée" confirmed={r.confirmed} onToggleConfirm={() => toggleConfirmed("valorisations", r.id)} />
                         </td>
                       </tr>
                     ))}
