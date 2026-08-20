@@ -53,9 +53,28 @@ const KIND_HEADER_BG = {
   Autre: "#262A30",
 };
 
+const ROW_PALETTE = ["#B8873A", "#2F6E7A", "#7A4E3A", "#5B7A4E", "#8A5B7A", "#4E6B7A", "#A3673A", "#6B7A2F", "#7A2F52", "#2F5B7A"];
+function colorForLabel(label) {
+  const s = (label || "").trim().toUpperCase();
+  if (!s) return COLORS.muted;
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return ROW_PALETTE[hash % ROW_PALETTE.length];
+}
+
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+// Évite les artefacts d'imprécision flottante (ex. 29 * 6.049 = 175.42100000000002)
+// Accepte indifféremment la virgule ou le point comme séparateur décimal en saisie
+function decNum(v) {
+  return typeof v === "string" ? v.replace(",", ".") : v;
+}
+function roundMoney(n, decimals = 2) {
+  if (!Number.isFinite(n)) return 0;
+  const f = Math.pow(10, decimals);
+  return Math.round((n + Number.EPSILON) * f) / f;
+}
 function fmtMoney(n, min = 2, max = 2) {
   const v = Number.isFinite(n) ? n : 0;
   return v.toLocaleString("fr-FR", { minimumFractionDigits: min, maximumFractionDigits: max }) + " €";
@@ -725,6 +744,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
   };
   const daysSinceExport = lastExportAt ? Math.floor((new Date() - new Date(lastExportAt)) / 86400000) : null;
   const hasAnyData = data.accounts.some((a) => a.transactions.length > 0 || a.versements.length > 0);
+  const [exportBannerDismissed, setExportBannerDismissed] = useState(false);
   useScrollToRow(selectedTxId, "tx-row");
   useScrollToRow(selectedVersId, "vers-row");
 
@@ -1055,6 +1075,20 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
       .sort()
       .map((k) => ({ key: k, label: monthLabel(k), net: Number(map[k].toFixed(2)) }));
   }, [activeAccount.versements]);
+
+  const versementDaily = useMemo(() => {
+    const map = {};
+    activeAccount.versements.forEach((v) => {
+      if (!v.date) return;
+      map[v.date] = (map[v.date] || 0) + signedVersement(v);
+    });
+    return Object.keys(map)
+      .sort()
+      .map((d) => ({ key: d, label: fmtDate(d).slice(0, 5), fullLabel: fmtDate(d), net: Number(map[d].toFixed(2)) }));
+  }, [activeAccount.versements]);
+
+  const [versementChartMode, setVersementChartMode] = useState("month");
+  const versementChartData = versementChartMode === "month" ? versementMonthly : versementDaily;
 
   const distinctMonthsCount = versementMonthly.length;
   const avgMonthlyVersement = distinctMonthsCount
@@ -1459,16 +1493,31 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
               </div>
             </SectionCard>
 
-            {hasAnyData && (daysSinceExport === null || daysSinceExport > 30) && (
+            {hasAnyData && !exportBannerDismissed && (daysSinceExport === null || daysSinceExport > 30) && (
               <SectionCard style={{ padding: "12px 20px", background: "#FBF3E3", borderLeft: `4px solid ${COLORS.gold}` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontFamily: "Inter", fontSize: 13 }}>
-                  <Download size={15} color={COLORS.gold} />
-                  <span>
-                    {daysSinceExport === null
-                      ? "Tu n'as encore jamais exporté tes données."
-                      : `Ton dernier export remonte à ${daysSinceExport} jours.`}{" "}
-                    Pense à faire une sauvegarde (bouton "Export JSON" en haut) — tes données ne sont stockées que sur cet appareil.
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontFamily: "Inter", fontSize: 13, color: "#4A3B1F" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 200 }}>
+                    <span>
+                      {daysSinceExport === null
+                        ? "Tu n'as encore jamais exporté tes données."
+                        : `Ton dernier export remonte à ${daysSinceExport} jours.`}{" "}
+                      Pense à faire une sauvegarde — tes données ne sont stockées que sur cet appareil.
+                    </span>
                   </span>
+                  <button
+                    onClick={() => { exportJSON(profileName, data); markExported(); }}
+                    title="Exporter en JSON maintenant"
+                    style={{ border: "none", background: COLORS.gold, color: "#fff", borderRadius: 6, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                  >
+                    <Download size={15} />
+                  </button>
+                  <button
+                    onClick={() => setExportBannerDismissed(true)}
+                    title="Fermer"
+                    style={{ border: "none", background: "rgba(0,0,0,0.08)", color: "#4A3B1F", borderRadius: 6, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                  >
+                    <X size={15} />
+                  </button>
                 </div>
               </SectionCard>
             )}
@@ -1677,7 +1726,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                 <tbody>
                   {displayedTransactions.map((t, i) => {
                     const ccy = costCcyMap[t.id] || "EUR";
-                    const montantVal = (Number(t.quantity) || 0) * (Number(t.cost) || 0);
+                    const montantVal = roundMoney((Number(t.quantity) || 0) * (Number(t.cost) || 0), 4);
                     const isSelected = selectedTxId === t.id;
                     return (
                       <tr
@@ -1698,7 +1747,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         }}
                         style={{
                           background: isSelected ? COLORS.goldLight : "transparent",
-                          boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : "none",
+                          boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : `inset 2px 0 0 0 ${colorForLabel(t.etf)}55`,
                           opacity: dragRowId === t.id ? 0.4 : 1,
                           transition: "background 0.2s",
                         }}
@@ -1731,7 +1780,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </select>
                         </td>
                         <td data-label="Actif" style={td}>
-                          <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span
+                              title={t.etf || ""}
+                              style={{ width: 8, height: 8, borderRadius: "50%", background: colorForLabel(t.etf), flexShrink: 0 }}
+                            />
+                            <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 120 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
+                          </div>
                         </td>
                         {showIsinCol && (
                           <td data-label="Code / ISIN" style={td}>
@@ -1739,19 +1794,19 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </td>
                         )}
                         <td data-label="Quantité" style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="any" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", e.target.value)} style={{ ...inputStyle, textAlign: "right", minWidth: 90 }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
+                          <input type="text" inputMode="decimal" value={t.quantity} onChange={(e) => updateTransaction(t.id, "quantity", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right", minWidth: 90 }} placeholder={isCrypto ? "Ex. 0.05" : "Ex. 10"} />
                         </td>
                         <td data-label="Prix unitaire" style={{ ...td, textAlign: "right" }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                               {ccy === "EUR" ? (
-                                <input type="number" step="0.0001" value={t.cost} onChange={(e) => updateTransaction(t.id, "cost", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 92 }} placeholder="Ex. 45.20" />
+                                <input type="text" inputMode="decimal" value={t.cost} onChange={(e) => updateTransaction(t.id, "cost", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right", width: 92 }} placeholder="Ex. 45.20" />
                               ) : (
                                 <input
-                                  type="number" step="0.0001"
+                                  type="text" inputMode="decimal"
                                   value={costUsdDraftMap[t.id] ?? ""}
                                   onChange={(e) => {
-                                    const v = e.target.value;
+                                    const v = decNum(e.target.value);
                                     setCostUsdDraftMap((prev) => ({ ...prev, [t.id]: v }));
                                     if (usdRate && v !== "") updateTransaction(t.id, "cost", Number(v) * usdRate);
                                   }}
@@ -1781,9 +1836,9 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         </td>
                         <td data-label="Montant" style={{ ...td, textAlign: "right" }}>
                           <input
-                            type="number" step="0.01"
+                            type="text" inputMode="decimal"
                             value={montantVal ? montantVal : ""}
-                            onChange={(e) => handleMontantChange(t.id, e.target.value)}
+                            onChange={(e) => handleMontantChange(t.id, decNum(e.target.value))}
                             style={{ ...inputStyle, textAlign: "right", minWidth: 95, fontWeight: 600, color: t.type === "vente" ? COLORS.red : COLORS.text }}
                             placeholder="Ex. 100"
                           />
@@ -1845,19 +1900,45 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
               <MiniStat label="Dernier versement" value={daysSinceLastVersement === null ? "—" : `il y a ${daysSinceLastVersement} j`} />
             </div>
 
-            {versementMonthly.length > 0 && (
+            {versementChartData.length > 0 && (
               <SectionCard>
-                <div style={{ fontFamily: "Fraunces", fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
-                  Versements par mois
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontFamily: "Fraunces", fontSize: 16, fontWeight: 600 }}>
+                    Versements {versementChartMode === "month" ? "par mois" : "par jour"}
+                  </div>
+                  <div style={{ display: "flex", border: `1px solid ${COLORS.border}`, borderRadius: 6, overflow: "hidden" }}>
+                    <button
+                      onClick={() => setVersementChartMode("month")}
+                      style={{ border: "none", padding: "5px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", background: versementChartMode === "month" ? COLORS.navy : COLORS.card, color: versementChartMode === "month" ? "#fff" : COLORS.muted }}
+                    >
+                      Par mois
+                    </button>
+                    <button
+                      onClick={() => setVersementChartMode("day")}
+                      style={{ border: "none", padding: "5px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", background: versementChartMode === "day" ? COLORS.navy : COLORS.card, color: versementChartMode === "day" ? "#fff" : COLORS.muted }}
+                    >
+                      Par jour
+                    </button>
+                  </div>
                 </div>
                 <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={versementMonthly}>
+                  <BarChart data={versementChartData} margin={{ bottom: versementChartMode === "day" ? 20 : 0 }}>
                     <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fontFamily: "Inter" }} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fontFamily: "Inter" }}
+                      angle={versementChartMode === "day" ? -45 : 0}
+                      textAnchor={versementChartMode === "day" ? "end" : "middle"}
+                      interval={versementChartMode === "day" && versementChartData.length > 15 ? "preserveStartEnd" : 0}
+                    />
                     <YAxis tick={{ fontSize: 11, fontFamily: "Inter" }} />
-                    <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }} />
+                    <Tooltip
+                      formatter={(v) => fmtMoney(v)}
+                      labelFormatter={(label, payload) => payload?.[0]?.payload?.fullLabel || label}
+                      contentStyle={{ fontFamily: "Inter", fontSize: 12.5, borderRadius: 8, background: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
+                    />
                     <Bar dataKey="net" radius={[3, 3, 0, 0]}>
-                      {versementMonthly.map((d, i) => (
+                      {versementChartData.map((d, i) => (
                         <Cell key={i} fill={d.net >= 0 ? COLORS.green : COLORS.red} />
                       ))}
                     </Bar>
@@ -1906,13 +1987,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                               {(versCcyMap[v.id] || "EUR") === "EUR" ? (
-                                <input type="number" step="0.01" value={v.amount} onChange={(e) => updateVersement(v.id, "amount", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 100 }} placeholder="Ex. 200" />
+                                <input type="text" inputMode="decimal" value={v.amount} onChange={(e) => updateVersement(v.id, "amount", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right", width: 100 }} placeholder="Ex. 200" />
                               ) : (
                                 <input
-                                  type="number" step="0.01"
+                                  type="text" inputMode="decimal"
                                   value={versUsdDraftMap[v.id] ?? ""}
                                   onChange={(e) => {
-                                    const val = e.target.value;
+                                    const val = decNum(e.target.value);
                                     setVersUsdDraftMap((prev) => ({ ...prev, [v.id]: val }));
                                     if (usdRate && val !== "") updateVersement(v.id, "amount", Number(val) * usdRate);
                                   }}
@@ -2129,13 +2210,13 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                                   <td style={{ ...td, fontWeight: 600 }}>#{i + 1}</td>
                                   <td style={{ ...td, textAlign: "right" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                                      <input type="number" step="1" value={s.gainPct} onChange={(e) => updateSellTarget(s.id, "gainPct", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 70 }} placeholder="30" />
+                                      <input type="text" inputMode="decimal" value={s.gainPct} onChange={(e) => updateSellTarget(s.id, "gainPct", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right", width: 70 }} placeholder="30" />
                                       <span style={{ color: COLORS.muted, fontSize: 12 }}>%</span>
                                     </div>
                                   </td>
                                   <td style={{ ...td, textAlign: "right" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                                      <input type="number" step="1" value={s.sellPct} onChange={(e) => updateSellTarget(s.id, "sellPct", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 70 }} placeholder="25" />
+                                      <input type="text" inputMode="decimal" value={s.sellPct} onChange={(e) => updateSellTarget(s.id, "sellPct", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right", width: 70 }} placeholder="25" />
                                       <span style={{ color: COLORS.muted, fontSize: 12 }}>%</span>
                                     </div>
                                   </td>
@@ -2231,19 +2312,19 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           <input value={t.isin || ""} onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.1" value={t.targetPct} onChange={(e) => updateTarget(t.id, "targetPct", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 40" />
+                          <input type="text" inputMode="decimal" value={t.targetPct} onChange={(e) => updateTarget(t.id, "targetPct", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 40" />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
                           <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                               {(targetCcyMap[t.id] || "EUR") === "EUR" ? (
-                                <input type="number" step="0.0001" value={t.price} onChange={(e) => updateTarget(t.id, "price", e.target.value)} style={{ ...inputStyle, textAlign: "right", width: 92 }} placeholder="Ex. 45.20" />
+                                <input type="text" inputMode="decimal" value={t.price} onChange={(e) => updateTarget(t.id, "price", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right", width: 92 }} placeholder="Ex. 45.20" />
                               ) : (
                                 <input
-                                  type="number" step="0.0001"
+                                  type="text" inputMode="decimal"
                                   value={targetUsdDraftMap[t.id] ?? ""}
                                   onChange={(e) => {
-                                    const v = e.target.value;
+                                    const v = decNum(e.target.value);
                                     setTargetUsdDraftMap((prev) => ({ ...prev, [t.id]: v }));
                                     if (usdRate && v !== "") updateTarget(t.id, "price", Number(v) * usdRate);
                                   }}
@@ -2294,7 +2375,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
             <SectionCard>
               <div style={{ fontFamily: "Fraunces", fontSize: 17, fontWeight: 600, marginBottom: 12 }}>Montant à répartir</div>
               <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                <input type="number" step="0.01" placeholder="Ex. 500" value={amountToInvest} onChange={(e) => setAmountToInvest(e.target.value)} style={{ ...inputStyle, maxWidth: 180, fontSize: 16, padding: "9px 10px" }} />
+                <input type="text" inputMode="decimal" placeholder="Ex. 500" value={amountToInvest} onChange={(e) => setAmountToInvest(decNum(e.target.value))} style={{ ...inputStyle, maxWidth: 180, fontSize: 16, padding: "9px 10px" }} />
                 <span style={{ fontFamily: "IBM Plex Mono", color: COLORS.muted }}>€</span>
               </div>
               {Number(amountToInvest) > 0 && targets.length > 0 && (
@@ -2369,7 +2450,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         </div>
                         <div style={{ flex: "0 1 150px" }}>
                           <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.4 }}>Montant visé</div>
-                          <input type="number" step="0.01" value={o.targetAmount} onChange={(e) => updateObjectif(o.id, "targetAmount", e.target.value)} placeholder="Ex. 10000" style={{ ...inputStyle, textAlign: "right" }} />
+                          <input type="text" inputMode="decimal" value={o.targetAmount} onChange={(e) => updateObjectif(o.id, "targetAmount", decNum(e.target.value))} placeholder="Ex. 10000" style={{ ...inputStyle, textAlign: "right" }} />
                         </div>
                         <div style={{ flex: "0 1 160px" }}>
                           <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.4 }}>Échéance (optionnel)</div>
@@ -2425,7 +2506,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           <input type="date" value={r.date} onChange={(e) => updateValorisation(r.id, "date", e.target.value)} style={inputStyle} />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
-                          <input type="number" step="0.01" value={r.value} onChange={(e) => updateValorisation(r.id, "value", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 1250.00" />
+                          <input type="text" inputMode="decimal" value={r.value} onChange={(e) => updateValorisation(r.id, "value", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 1250.00" />
                         </td>
                         <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", color: COLORS.muted }}>{fmtMoney(r.cumule)}</td>
                         <td style={{ ...td, textAlign: "right", fontFamily: "IBM Plex Mono", fontWeight: 600, color: r.diff >= 0 ? COLORS.green : COLORS.red }}>

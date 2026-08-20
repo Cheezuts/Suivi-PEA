@@ -18,6 +18,10 @@ Application multi-comptes (PEA, Compte-titres, Crypto, Autre) de suivi de portef
 - **Actions groupées** dans Opérations : sélection multiple (cases à cocher), suppression ou duplication en lot.
 - **Recherche** par actif/code/type, et colonne Code/ISIN masquable pour réduire la densité d'une ligne.
 - **Cohérence devise €/$** : la bascule est maintenant disponible partout où un prix se saisit (Opérations, Versements, Calculateur).
+- **Saisie robuste** : virgule ou point fonctionnent indifféremment comme séparateur décimal partout, et le montant calculé automatiquement n'affiche plus d'artefacts d'imprécision flottante (ex. `175.42100000000002`).
+- **Repérage visuel par actif** : chaque actif (PEA Monde, BTC…) garde toujours la même couleur discrète d'une ligne à l'autre, pour repérer facilement les lignes d'un même titre.
+- **Graphique des versements** : bascule "Par mois / Par jour" pour éviter l'effet de tassement quand plusieurs versements tombent le même mois.
+- **Bandeau de rappel d'export** : bouton de téléchargement direct et bouton de fermeture.
 - **Raccourcis clavier** : `N` (nouvelle ligne), `Ctrl+Z` (annuler la dernière modification), `?` (ouvrir le guide). Un tutoriel intégré explique chaque onglet et ces raccourcis (bouton "Aide").
 - **Export CSV** en plus du PDF/JSON, et un bandeau de rappel si tu n'as pas exporté depuis longtemps.
 - **Paliers de vente crypto** : définis plusieurs paliers de prise de bénéfice par actif (ex. vendre 25 % quand le prix a pris +30 % par rapport à ton prix de revient moyen), avec barre de progression vers chaque palier.
