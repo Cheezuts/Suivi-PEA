@@ -60,6 +60,12 @@ input, select {
 html.dark input, html.dark select {
   color-scheme: dark;
 }
+input::placeholder {
+  color: var(--pea-muted, #6B7280);
+  -webkit-text-fill-color: var(--pea-muted, #6B7280);
+  font-style: italic;
+  opacity: 0.75;
+}
 
 /* iOS zoome automatiquement la page si un champ a une taille de police < 16px au focus,
    ce qui rend le texte tapé illisible/hors-écran dans les tableaux qui défilent horizontalement.

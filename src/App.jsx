@@ -9,7 +9,7 @@ import {
   Download, Upload, FileText, LogOut, Calculator, Landmark, Briefcase,
   Bitcoin, Wallet, ChevronDown, X, Wallet2, LayoutDashboard, ArrowRight,
   Check, RefreshCw, Target, Copy, ArrowUp, ArrowDown, ChevronUp, ArrowUpDown,
-  FileSpreadsheet, Moon, Sun, HelpCircle, Keyboard, GripVertical,
+  FileSpreadsheet, Moon, Sun, HelpCircle, Keyboard, GripVertical, Star,
 } from "lucide-react";
 import ProfileGate from "./ProfileGate.jsx";
 import { saveProfileData } from "./profiles.js";
@@ -169,6 +169,7 @@ function makeAccount(name, kind) {
     allocationTargets: [],
     objectifs: [],
     sellTargets: [],
+    favoris: [],
   };
 }
 
@@ -180,6 +181,7 @@ function normalizeData(raw) {
       valorisations: [],
       objectifs: [],
       sellTargets: [],
+      favoris: [],
       kind: "Autre",
       ...a,
       versements: (a.versements || []).map((v) => ({ type: "depot", ...v })),
@@ -250,14 +252,19 @@ function StatChip({ label, value, accent }) {
     </div>
   );
 }
-function RowActions({ onDelete, deleteLabel, confirmed, onToggleConfirm }) {
+function RowActions({ onDelete, deleteLabel, confirmed, onToggleConfirm, onConfirmAndNext }) {
+  const handleConfirmClick = () => {
+    const wasConfirmed = confirmed;
+    onToggleConfirm();
+    if (!wasConfirmed && onConfirmAndNext) onConfirmAndNext();
+  };
   return (
     <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
       <button
         type="button"
-        title={confirmed ? "Ligne vérifiée — cliquer pour annuler" : "Marquer cette ligne comme vérifiée"}
+        title={confirmed ? "Ligne vérifiée — cliquer pour annuler" : "Valider cette ligne et en ajouter une nouvelle"}
         className="pea-row-btn"
-        onClick={onToggleConfirm}
+        onClick={handleConfirmClick}
         style={{
           background: confirmed ? COLORS.green : "#EAF3EE",
           border: "none", borderRadius: 6, width: 28, height: 28,
@@ -948,18 +955,43 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
   }, [data.accounts]);
 
   // ---------- Dérivés du compte actif ----------
+  const favoris = activeAccount.favoris || [];
+  const favorisByName = useMemo(() => {
+    const map = {};
+    favoris.forEach((f) => { map[(f.name || "").trim().toLowerCase()] = f; });
+    return map;
+  }, [favoris]);
+
   const etfList = useMemo(() => {
     const set = new Set(activeAccount.transactions.map((t) => t.etf).filter(Boolean));
+    favoris.forEach((f) => { if (f.name) set.add(f.name); });
     return Array.from(set);
-  }, [activeAccount.transactions]);
+  }, [activeAccount.transactions, favoris]);
 
   const isinByEtf = useMemo(() => {
     const map = {};
+    favoris.forEach((f) => { if (f.name && f.isin) map[f.name] = f.isin; });
     activeAccount.transactions.forEach((t) => {
       if (t.etf && t.isin && !map[t.etf]) map[t.etf] = t.isin;
     });
     return map;
-  }, [activeAccount.transactions]);
+  }, [activeAccount.transactions, favoris]);
+
+  const addFavori = (name, isin) => {
+    const n = (name || "").trim();
+    if (!n) return;
+    if (favoris.some((f) => f.name.toLowerCase() === n.toLowerCase())) return;
+    patchActiveAccount({ favoris: [...favoris, { id: uid(), name: n, isin: (isin || "").toUpperCase() }] });
+  };
+  const deleteFavori = (id) => {
+    patchActiveAccount({ favoris: favoris.filter((f) => f.id !== id) });
+  };
+  // Renseigne automatiquement le code/ISIN quand le nom saisi correspond à un favori
+  const handleEtfChange = (id, value, updater) => {
+    updater(id, "etf", value);
+    const fav = favorisByName[(value || "").trim().toLowerCase()];
+    if (fav && fav.isin) updater(id, "isin", fav.isin);
+  };
 
   const totalQty = activeAccount.transactions.reduce((s, t) => s + signedTx(t).qty, 0);
   const totalInvesti = activeAccount.transactions.reduce((s, t) => s + signedTx(t).amount, 0);
@@ -1681,8 +1713,32 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                 Afficher le code / ISIN
               </label>
             </div>
+            {favoris.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                <Star size={12} color={COLORS.gold} fill={COLORS.gold} />
+                <span style={{ fontSize: 11.5, color: COLORS.muted, marginRight: 2 }}>Favoris :</span>
+                {favoris.map((f) => (
+                  <span
+                    key={f.id}
+                    style={{ display: "flex", alignItems: "center", gap: 4, background: COLORS.cardAlt, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: "2px 4px 2px 9px", fontSize: 11.5 }}
+                  >
+                    {f.name}
+                    <button
+                      type="button"
+                      title="Retirer ce favori"
+                      onClick={() => deleteFavori(f.id)}
+                      style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 3, color: COLORS.muted }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: COLORS.muted, marginBottom: 10 }}>
-              Astuce : pour une ligne, remplis la quantité <em>ou</em> le prix unitaire, puis le montant total en € —
+              Astuce : clique l'étoile ★ à côté d'un actif pour l'ajouter à tes favoris — son code se complétera
+              automatiquement la prochaine fois que tu retaperas son nom.{" "}
+              Pour une ligne, remplis la quantité <em>ou</em> le prix unitaire, puis le montant total en € —
               l'autre se calcule automatiquement. Clique sur un en-tête de colonne pour trier ; les flèches ▲▼ ne
               réordonnent manuellement que lorsqu'aucun tri n'est actif.
               {txSortCol && (
@@ -1749,8 +1805,8 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           setDragRowId(null);
                         }}
                         style={{
-                          background: isSelected ? COLORS.goldLight : `${colorForLabel(t.etf)}20`,
-                          boxShadow: isSelected ? `inset 3px 0 0 0 ${accent}` : "none",
+                          background: isSelected ? COLORS.goldLight : `${colorForLabel(t.etf)}${dark ? "4D" : "2E"}`,
+                          boxShadow: isSelected ? `inset 4px 0 0 0 ${accent}` : `inset 4px 0 0 0 ${colorForLabel(t.etf)}`,
                           opacity: dragRowId === t.id ? 0.4 : 1,
                           transition: "background 0.2s",
                         }}
@@ -1788,12 +1844,30 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                               title={t.etf || ""}
                               style={{ width: 8, height: 8, borderRadius: "50%", background: colorForLabel(t.etf), flexShrink: 0 }}
                             />
-                            <input list="etf-names" value={t.etf} onChange={(e) => updateTransaction(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 120 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
+                            <input list="etf-names" value={t.etf} onChange={(e) => handleEtfChange(t.id, e.target.value, updateTransaction)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 110 }} placeholder="Nom de l'actif…" />
+                            {t.etf && (
+                              <button
+                                type="button"
+                                title={favorisByName[t.etf.trim().toLowerCase()] ? "Retirer des favoris" : "Ajouter aux favoris (autocomplétion future)"}
+                                onClick={() => {
+                                  const fav = favorisByName[t.etf.trim().toLowerCase()];
+                                  if (fav) deleteFavori(fav.id);
+                                  else addFavori(t.etf, t.isin);
+                                }}
+                                style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, flexShrink: 0, display: "flex" }}
+                              >
+                                <Star
+                                  size={13}
+                                  color={COLORS.gold}
+                                  fill={favorisByName[t.etf.trim().toLowerCase()] ? COLORS.gold : "none"}
+                                />
+                              </button>
+                            )}
                           </div>
                         </td>
                         {showIsinCol && (
                           <td data-label="Code / ISIN" style={td}>
-                            <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
+                            <input value={t.isin || ""} onChange={(e) => updateTransaction(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder="Code (optionnel)" maxLength={16} />
                           </td>
                         )}
                         <td data-label="Quantité" style={{ ...td, textAlign: "right" }}>
@@ -1863,7 +1937,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                             <button type="button" title="Dupliquer cette ligne" onClick={() => cloneTransaction(t.id)} style={miniIconBtnStyle}>
                               <Copy size={13} color={COLORS.navy} />
                             </button>
-                            <RowActions onDelete={() => deleteTransaction(t.id)} deleteLabel="cette opération" confirmed={t.confirmed} onToggleConfirm={() => toggleConfirmed("transactions", t.id)} />
+                            <RowActions onDelete={() => deleteTransaction(t.id)} deleteLabel="cette opération" confirmed={t.confirmed} onToggleConfirm={() => toggleConfirmed("transactions", t.id)} onConfirmAndNext={addTransaction} />
                           </div>
                         </td>
                       </tr>
@@ -2025,7 +2099,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </div>
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
-                          <RowActions onDelete={() => deleteVersement(v.id)} deleteLabel="ce versement" confirmed={v.confirmed} onToggleConfirm={() => toggleConfirmed("versements", v.id)} />
+                          <RowActions onDelete={() => deleteVersement(v.id)} deleteLabel="ce versement" confirmed={v.confirmed} onToggleConfirm={() => toggleConfirmed("versements", v.id)} onConfirmAndNext={addVersement} />
                         </td>
                       </tr>
                     ))}
@@ -2309,10 +2383,10 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                     {targets.map((t) => (
                       <tr key={t.id}>
                         <td style={td}>
-                          <input list="etf-names" value={t.etf} onChange={(e) => updateTarget(t.id, "etf", e.target.value)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. MSCI World"} />
+                          <input list="etf-names" value={t.etf} onChange={(e) => handleEtfChange(t.id, e.target.value, updateTarget)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder="Nom de l'actif…" />
                         </td>
                         <td style={td}>
-                          <input value={t.isin || ""} onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder={isCrypto ? "Ex. BTC" : "Ex. FR0013412020"} maxLength={16} />
+                          <input value={t.isin || ""} onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder="Code (optionnel)" maxLength={16} />
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>
                           <input type="text" inputMode="decimal" value={t.targetPct} onChange={(e) => updateTarget(t.id, "targetPct", decNum(e.target.value))} style={{ ...inputStyle, textAlign: "right" }} placeholder="Ex. 40" />
@@ -2352,7 +2426,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           </div>
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
-                          <RowActions onDelete={() => deleteTarget(t.id)} deleteLabel="cette ligne" confirmed={t.confirmed} onToggleConfirm={() => toggleConfirmed("allocationTargets", t.id)} />
+                          <RowActions onDelete={() => deleteTarget(t.id)} deleteLabel="cette ligne" confirmed={t.confirmed} onToggleConfirm={() => toggleConfirmed("allocationTargets", t.id)} onConfirmAndNext={addTarget} />
                         </td>
                       </tr>
                     ))}
@@ -2459,7 +2533,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           <div style={{ fontSize: 11, color: COLORS.muted, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.4 }}>Échéance (optionnel)</div>
                           <input type="date" value={o.targetDate || ""} onChange={(e) => updateObjectif(o.id, "targetDate", e.target.value)} style={inputStyle} />
                         </div>
-                        <RowActions onDelete={() => deleteObjectif(o.id)} deleteLabel="cet objectif" confirmed={o.confirmed} onToggleConfirm={() => toggleConfirmed("objectifs", o.id)} />
+                        <RowActions onDelete={() => deleteObjectif(o.id)} deleteLabel="cet objectif" confirmed={o.confirmed} onToggleConfirm={() => toggleConfirmed("objectifs", o.id)} onConfirmAndNext={addObjectif} />
                       </div>
                       {target > 0 && (
                         <>
@@ -2519,7 +2593,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           {fmtPct(pctReturn(r.diff, r.cumule))}
                         </td>
                         <td style={{ ...td, textAlign: "center" }}>
-                          <RowActions onDelete={() => deleteValorisation(r.id)} deleteLabel="cette entrée" confirmed={r.confirmed} onToggleConfirm={() => toggleConfirmed("valorisations", r.id)} />
+                          <RowActions onDelete={() => deleteValorisation(r.id)} deleteLabel="cette entrée" confirmed={r.confirmed} onToggleConfirm={() => toggleConfirmed("valorisations", r.id)} onConfirmAndNext={addValorisation} />
                         </td>
                       </tr>
                     ))}
