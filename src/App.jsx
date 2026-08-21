@@ -1136,7 +1136,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
 
   // ---------- Mutateurs : transactions ----------
   const addTransaction = () => {
-    const newTx = { id: uid(), date: todayISO(), etf: etfList[0] || "", isin: etfList[0] ? isinByEtf[etfList[0]] || "" : "", type: "achat", quantity: "", cost: "" };
+    const newTx = { id: uid(), date: todayISO(), etf: "", isin: "", type: "achat", quantity: "", cost: "" };
     patchActiveAccount({ transactions: [...activeAccount.transactions, newTx] });
     setSelectedTxId(newTx.id);
   };
@@ -1501,6 +1501,10 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
           </div>,
           document.body
         )}
+
+      <datalist id="etf-names">
+        {etfList.map((e) => <option key={e} value={e} />)}
+      </datalist>
 
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
         {tab === "vue" && (
@@ -1962,9 +1966,6 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                   </tr>
                 </tbody>
               </table>
-              <datalist id="etf-names">
-                {etfList.map((e) => <option key={e} value={e} />)}
-              </datalist>
             </div>
           </SectionCard>
         )}
