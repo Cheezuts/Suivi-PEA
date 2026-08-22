@@ -53,7 +53,7 @@ const KIND_HEADER_BG = {
   Autre: "#262A30",
 };
 
-const ROW_PALETTE = ["#B8873A", "#2F6E7A", "#7A4E3A", "#5B7A4E", "#8A5B7A", "#4E6B7A", "#A3673A", "#6B7A2F", "#7A2F52", "#2F5B7A"];
+const ROW_PALETTE = ["#AD2828", "#AD7828", "#92AD28", "#43AD28", "#28AD5D", "#28ADAD", "#285DAD", "#4328AD", "#9228AD", "#AD2878"];
 function colorForLabel(label) {
   const s = (label || "").trim().toUpperCase();
   if (!s) return COLORS.muted;
@@ -252,6 +252,54 @@ function StatChip({ label, value, accent }) {
     </div>
   );
 }
+function EtfAutocomplete({ value, onInput, onSelect, options, placeholder, style }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("touchstart", onClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("touchstart", onClickOutside);
+    };
+  }, [open]);
+
+  const q = (value || "").trim().toLowerCase();
+  const filtered = (q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options).slice(0, 8);
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative", flex: 1, minWidth: 0 }}>
+      <input
+        value={value}
+        onChange={(e) => onInput(e.target.value)}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        style={style}
+      />
+      {open && filtered.length > 0 && (
+        <div className="pea-autocomplete-menu">
+          {filtered.map((o) => (
+            <button
+              key={o.name}
+              type="button"
+              className="pea-autocomplete-item"
+              onClick={() => { onSelect(o); setOpen(false); }}
+            >
+              {o.isFavori ? <Star size={11} color={COLORS.gold} fill={COLORS.gold} style={{ flexShrink: 0 }} /> : <span style={{ width: 11, flexShrink: 0 }} />}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
+              {o.isin && <span style={{ marginLeft: "auto", fontSize: 11, color: COLORS.muted, flexShrink: 0 }}>{o.isin}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RowActions({ onDelete, deleteLabel, confirmed, onToggleConfirm, onConfirmAndNext }) {
   const handleConfirmClick = () => {
     const wasConfirmed = confirmed;
@@ -992,6 +1040,18 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
     const fav = favorisByName[(value || "").trim().toLowerCase()];
     if (fav && fav.isin) updater(id, "isin", fav.isin);
   };
+  const handleEtfSelect = (id, option, updater) => {
+    updater(id, "etf", option.name);
+    if (option.isin) updater(id, "isin", option.isin);
+  };
+  const etfOptions = useMemo(() => {
+    const favNames = new Set(favoris.map((f) => f.name.toLowerCase()));
+    const favOpts = favoris.map((f) => ({ name: f.name, isin: f.isin || "", isFavori: true }));
+    const otherOpts = etfList
+      .filter((e) => !favNames.has(e.toLowerCase()))
+      .map((e) => ({ name: e, isin: isinByEtf[e] || "", isFavori: false }));
+    return [...favOpts, ...otherOpts];
+  }, [favoris, etfList, isinByEtf]);
 
   const totalQty = activeAccount.transactions.reduce((s, t) => s + signedTx(t).qty, 0);
   const totalInvesti = activeAccount.transactions.reduce((s, t) => s + signedTx(t).amount, 0);
@@ -1502,10 +1562,6 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
           document.body
         )}
 
-      <datalist id="etf-names">
-        {etfList.map((e) => <option key={e} value={e} />)}
-      </datalist>
-
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20 }}>
         {tab === "vue" && (
           <>
@@ -1809,7 +1865,7 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                           setDragRowId(null);
                         }}
                         style={{
-                          background: isSelected ? COLORS.goldLight : `${colorForLabel(t.etf)}${dark ? "4D" : "2E"}`,
+                          background: isSelected ? COLORS.goldLight : `${colorForLabel(t.etf)}${dark ? "5C" : "38"}`,
                           boxShadow: isSelected ? `inset 4px 0 0 0 ${accent}` : `inset 4px 0 0 0 ${colorForLabel(t.etf)}`,
                           opacity: dragRowId === t.id ? 0.4 : 1,
                           transition: "background 0.2s",
@@ -1848,7 +1904,14 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                               title={t.etf || ""}
                               style={{ width: 8, height: 8, borderRadius: "50%", background: colorForLabel(t.etf), flexShrink: 0 }}
                             />
-                            <input list="etf-names" value={t.etf} onChange={(e) => handleEtfChange(t.id, e.target.value, updateTransaction)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 110 }} placeholder="Nom de l'actif…" />
+                            <EtfAutocomplete
+                              value={t.etf}
+                              onInput={(v) => handleEtfChange(t.id, v, updateTransaction)}
+                              onSelect={(o) => handleEtfSelect(t.id, o, updateTransaction)}
+                              options={etfOptions}
+                              placeholder="Nom de l'actif…"
+                              style={{ ...inputStyle, fontFamily: "Inter", minWidth: 110, width: "100%" }}
+                            />
                             {t.etf && (
                               <button
                                 type="button"
@@ -2384,7 +2447,14 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                     {targets.map((t) => (
                       <tr key={t.id}>
                         <td style={td}>
-                          <input list="etf-names" value={t.etf} onChange={(e) => handleEtfChange(t.id, e.target.value, updateTarget)} style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130 }} placeholder="Nom de l'actif…" />
+                          <EtfAutocomplete
+                            value={t.etf}
+                            onInput={(v) => handleEtfChange(t.id, v, updateTarget)}
+                            onSelect={(o) => handleEtfSelect(t.id, o, updateTarget)}
+                            options={etfOptions}
+                            placeholder="Nom de l'actif…"
+                            style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130, width: "100%" }}
+                          />
                         </td>
                         <td style={td}>
                           <input value={t.isin || ""} onChange={(e) => updateTarget(t.id, "isin", e.target.value.toUpperCase())} style={{ ...inputStyle, letterSpacing: 0.5, minWidth: 110 }} placeholder="Code (optionnel)" maxLength={16} />

@@ -313,6 +313,40 @@ input::placeholder {
   color: #fff;
 }
 
+/* ---------- Autocomplétion Actif (remplace le datalist natif, peu fiable sur mobile) ---------- */
+.pea-autocomplete-menu {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  background: var(--pea-card, #FFFFFF);
+  border: 1px solid var(--pea-border, #E3E1D8);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  z-index: 80;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.pea-autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--pea-text, #1C2530);
+  font-family: "Inter";
+  font-size: 13px;
+  padding: 8px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.pea-autocomplete-item:hover {
+  background: var(--pea-card-alt, #FCFCFA);
+}
+
 /* ---------- Répartition (camembert) ---------- */
 .pea-pie-wrap {
   display: flex;
