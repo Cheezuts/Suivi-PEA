@@ -1035,14 +1035,20 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
     patchActiveAccount({ favoris: favoris.filter((f) => f.id !== id) });
   };
   // Renseigne automatiquement le code/ISIN quand le nom saisi correspond à un favori
-  const handleEtfChange = (id, value, updater) => {
-    updater(id, "etf", value);
+  const handleEtfChange = (id, value, listKey) => {
     const fav = favorisByName[(value || "").trim().toLowerCase()];
-    if (fav && fav.isin) updater(id, "isin", fav.isin);
+    patchActiveAccount({
+      [listKey]: (activeAccount[listKey] || []).map((x) =>
+        x.id === id ? { ...x, etf: value, isin: fav && fav.isin ? fav.isin : x.isin } : x
+      ),
+    });
   };
-  const handleEtfSelect = (id, option, updater) => {
-    updater(id, "etf", option.name);
-    if (option.isin) updater(id, "isin", option.isin);
+  const handleEtfSelect = (id, option, listKey) => {
+    patchActiveAccount({
+      [listKey]: (activeAccount[listKey] || []).map((x) =>
+        x.id === id ? { ...x, etf: option.name, isin: option.isin || x.isin } : x
+      ),
+    });
   };
   const etfOptions = useMemo(() => {
     const favNames = new Set(favoris.map((f) => f.name.toLowerCase()));
@@ -1906,8 +1912,8 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                             />
                             <EtfAutocomplete
                               value={t.etf}
-                              onInput={(v) => handleEtfChange(t.id, v, updateTransaction)}
-                              onSelect={(o) => handleEtfSelect(t.id, o, updateTransaction)}
+                              onInput={(v) => handleEtfChange(t.id, v, "transactions")}
+                              onSelect={(o) => handleEtfSelect(t.id, o, "transactions")}
                               options={etfOptions}
                               placeholder="Nom de l'actif…"
                               style={{ ...inputStyle, fontFamily: "Inter", minWidth: 110, width: "100%" }}
@@ -2449,8 +2455,8 @@ function Dashboard({ profileName, profileKey, initialData, onLogout, dark, setDa
                         <td style={td}>
                           <EtfAutocomplete
                             value={t.etf}
-                            onInput={(v) => handleEtfChange(t.id, v, updateTarget)}
-                            onSelect={(o) => handleEtfSelect(t.id, o, updateTarget)}
+                            onInput={(v) => handleEtfChange(t.id, v, "allocationTargets")}
+                            onSelect={(o) => handleEtfSelect(t.id, o, "allocationTargets")}
                             options={etfOptions}
                             placeholder="Nom de l'actif…"
                             style={{ ...inputStyle, fontFamily: "Inter", minWidth: 130, width: "100%" }}
